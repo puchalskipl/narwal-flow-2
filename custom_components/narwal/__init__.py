@@ -10,7 +10,12 @@ from homeassistant.auth.permissions.const import POLICY_CONTROL
 from homeassistant.components.vacuum import DOMAIN as VACUUM_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+)
 from homeassistant.exceptions import (
     ConfigEntryNotReady,
     HomeAssistantError,
@@ -67,6 +72,7 @@ FIELD_SUCTION = "suction"
 FIELD_WATER = "water"
 FIELD_MOP_STRENGTH = "mop_strength"
 FIELD_PASSES = "passes"
+FIELD_MOP_PASSES = "mop_passes"
 FIELD_ROUTE = "route"
 
 WORK_MODE_OPTIONS: dict[str, WorkMode] = {
@@ -116,9 +122,32 @@ CLEAN_ROOMS_SCHEMA = vol.Schema(
         vol.Optional(FIELD_PASSES, default=1): lambda value: _validate_pass_count(
             value
         ),
+        vol.Optional(FIELD_MOP_PASSES): lambda value: _validate_pass_count(value),
         vol.Optional(FIELD_ROUTE): vol.In(ROUTE_OPTIONS),
     }
 )
+
+SERVICE_GET_CURRENT_TASK = "get_current_task"
+
+GET_CURRENT_TASK_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids,
+        vol.Optional(ATTR_DEVICE_ID): cv.ensure_list,
+        vol.Optional(ATTR_AREA_ID): cv.ensure_list,
+    }
+)
+
+
+def _jsonable(value: object) -> object:
+    """Convert a decoded protobuf dict to JSON-safe values (bytes as hex)."""
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).hex()
+    return value
+
 
 SUCTION_OPTION_LABELS: dict[str, str] = {
     "quiet": "Quiet",
@@ -411,6 +440,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
             mop_strength=mop_strength,
             passes=passes,
             route=route,
+            mop_passes=call.data.get(FIELD_MOP_PASSES),
         )
         room_settings = coordinator.room_clean_settings_for_rooms(
             room_ids,
@@ -470,6 +500,31 @@ def _async_register_services(hass: HomeAssistant) -> None:
         SERVICE_CLEAN_ROOMS,
         async_clean_rooms,
         schema=CLEAN_ROOMS_SCHEMA,
+    )
+
+    async def async_get_current_task(call: ServiceCall) -> ServiceResponse:
+        """Return the robot's current CleanTask (clean/current_clean_task/get)."""
+        entity_ids = await _async_extract_entity_ids(call)
+        entity_ids = await _async_validate_clean_rooms_targets(hass, call, entity_ids)
+        coordinators = await _async_get_service_coordinators(hass, entity_ids)
+        if len(coordinators) != 1:
+            raise HomeAssistantError("Target exactly one Narwal vacuum")
+        client = coordinators[0].client
+        if not client.robot_awake:
+            await client.wake(timeout=10.0)
+        resp = await client.get_current_task()
+        return {
+            "result_code": resp.result_code,
+            "data": _jsonable(resp.data),
+            "raw_hex": resp.raw_payload.hex(),
+        }
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_CURRENT_TASK,
+        async_get_current_task,
+        schema=GET_CURRENT_TASK_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
 
 

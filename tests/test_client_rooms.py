@@ -137,6 +137,28 @@ class TestBuildStartCleanPayload:
         assert room_params[12]["6"] == 1
         assert room_params[12]["8"] == CleaningRoute.STANDARD
 
+    def test_vacuum_then_mop_separate_mop_passes(self) -> None:
+        """mop_passes overrides the mop tag only, and only for vacuum-then-mop."""
+        client = NarwalClient("127.0.0.1")
+        payload = client._build_start_clean_payload(
+            [2, 12],
+            7,
+            room_settings={
+                2: RoomCleanSettings(
+                    work_mode=WorkMode.VACUUM_THEN_MOP, passes=1, mop_passes=3
+                ),
+                12: RoomCleanSettings(
+                    work_mode=WorkMode.VACUUM_AND_MOP, passes=2, mop_passes=3
+                ),
+            },
+        )
+
+        room_params = {item["1"]["2"]: item["2"] for item in _items(_task(payload))}
+        assert room_params[2]["5"] == 1
+        assert room_params[2]["6"] == 3
+        assert room_params[12]["7"] == 2
+        assert "6" not in room_params[12]
+
     def test_mixed_room_modes_use_custom_task_type(self) -> None:
         """Mixed profiles use the app's custom task envelope and per-room modes."""
         client = NarwalClient("127.0.0.1")

@@ -183,6 +183,8 @@ class RoomCleanSettings:
     mop_strength: MopStrengthLevel = MopStrengthLevel.NORMAL
     passes: int = 1
     route: CleaningRoute | None = None
+    # Vacuum-then-mop only: mop pass count (tag 6). None = same as passes.
+    mop_passes: int | None = None
 
 
 def _base_status_working_status(decoded: dict[str, Any] | object) -> WorkingStatus | None:
@@ -1549,6 +1551,11 @@ class NarwalClient:
             param["8"] = int(settings.route)
         for tag in pass_tags:
             param[tag] = int(settings.passes)
+        if (
+            settings.work_mode == WorkMode.VACUUM_THEN_MOP
+            and settings.mop_passes is not None
+        ):
+            param["6"] = int(settings.mop_passes)
         return param
 
     @classmethod

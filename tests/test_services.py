@@ -16,6 +16,7 @@ from homeassistant.exceptions import HomeAssistantError  # noqa: E402
 
 from custom_components.narwal import (  # noqa: E402
     FIELD_MODE,
+    FIELD_MOP_PASSES,
     FIELD_MOP_STRENGTH,
     FIELD_PASSES,
     FIELD_ROOMS,
@@ -186,6 +187,30 @@ async def test_clean_rooms_service_starts_requested_rooms() -> None:
     assert coordinator.active_clean_work_mode == WorkMode.VACUUM_AND_MOP
     assert not can_start_cleaning(coordinator.client.state)
     coordinator.async_set_updated_data.assert_called_once_with(coordinator.client.state)
+
+
+async def test_clean_rooms_service_passes_mop_passes_for_vacuum_then_mop() -> None:
+    """mop_passes reaches the per-room settings sent to start_rooms."""
+    coordinator = _coordinator()
+    handler, registry = _register_clean_rooms_handler(coordinator)
+    call = _clean_rooms_call()
+    call.data[FIELD_MODE] = "vacuum_then_mop"
+    call.data[FIELD_PASSES] = 1
+    call.data[FIELD_MOP_PASSES] = 3
+
+    with (
+        patch(
+            "custom_components.narwal.service.async_extract_entity_ids",
+            new_callable=AsyncMock,
+            return_value=["vacuum.downstairs_narwal"],
+        ),
+        patch("custom_components.narwal.er.async_get", return_value=registry),
+    ):
+        await handler(call)
+
+    room_settings = coordinator.client.start_rooms.await_args.kwargs["room_settings"]
+    assert {s.passes for s in room_settings.values()} == {1}
+    assert {s.mop_passes for s in room_settings.values()} == {3}
 
 
 async def test_clean_rooms_service_supports_legacy_entity_extractor() -> None:
@@ -605,3 +630,48 @@ async def test_clean_rooms_service_all_still_refreshes_map() -> None:
     await _async_room_ids_for_coordinator(coordinator, ["all"])
 
     coordinator.client.get_map.assert_awaited_once()
+
+
+async def test_get_current_task_returns_decoded_task_with_hex_bytes() -> None:
+    """Debug service returns the current CleanTask, bytes as hex."""
+    coordinator = _coordinator()
+    coordinator.client.get_current_task = AsyncMock(
+        return_value=CommandResponse(
+            result_code=CommandResult.SUCCESS,
+            data={"1": {"1": 1, "2": {"2": {"1": 2}}, "9": b"\x01\x02"}},
+            raw_payload=b"\x0a\x00",
+        )
+    )
+    hass = MagicMock()
+    hass.data = {DOMAIN: {"entry-1": coordinator}}
+    hass.services.has_service.return_value = False
+    handlers = {}
+
+    def register_service(domain: str, service_name: str, handler, **kwargs) -> None:
+        handlers[(domain, service_name)] = handler
+
+    hass.services.async_register.side_effect = register_service
+    registry = MagicMock()
+    registry.async_get.return_value = SimpleNamespace(
+        config_entry_id="entry-1",
+        platform=DOMAIN,
+    )
+    _async_register_services(hass)
+    handler = handlers[(DOMAIN, "get_current_task")]
+    call = SimpleNamespace(
+        context=SimpleNamespace(user_id=None),
+        data={"entity_id": ["vacuum.downstairs_narwal"]},
+    )
+
+    with (
+        patch(
+            "custom_components.narwal.service.async_extract_entity_ids",
+            new_callable=AsyncMock,
+            return_value=["vacuum.downstairs_narwal"],
+        ),
+        patch("custom_components.narwal.er.async_get", return_value=registry),
+    ):
+        result = await handler(call)
+
+    assert result["data"] == {"1": {"1": 1, "2": {"2": {"1": 2}}, "9": "0102"}}
+    assert result["raw_hex"] == "0a00"

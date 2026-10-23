@@ -78,6 +78,14 @@ def install() -> None:
     ha_core.HomeAssistant = MagicMock  # type: ignore[attr-defined]
     ha_core.ServiceCall = MagicMock  # type: ignore[attr-defined]
     ha_core.State = MagicMock  # type: ignore[attr-defined]
+    ha_core.ServiceResponse = dict  # type: ignore[attr-defined]
+
+    class _SupportsResponse:
+        NONE = "none"
+        OPTIONAL = "optional"
+        ONLY = "only"
+
+    ha_core.SupportsResponse = _SupportsResponse  # type: ignore[attr-defined]
     ha_core.callback = lambda f: f  # type: ignore[attr-defined]
 
     ha_util = _mod("homeassistant.util", ha)

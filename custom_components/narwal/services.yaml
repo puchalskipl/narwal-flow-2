@@ -59,6 +59,14 @@ clean_rooms:
           min: 1
           max: 3
           mode: box
+    mop_passes:
+      name: Mop passes
+      description: Vacuum then mop only. Mop pass count; passes sets the vacuum pass count. Defaults to passes.
+      selector:
+        number:
+          min: 1
+          max: 3
+          mode: box
     route:
       name: Route
       selector:
@@ -66,3 +74,11 @@ clean_rooms:
           options:
             - standard
             - meticulous
+
+get_current_task:
+  name: Get current task
+  description: Debug. Read the robot's current CleanTask (clean/current_clean_task/get) and return it decoded.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
