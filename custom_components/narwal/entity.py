@@ -1,59 +1,61 @@
-"""Base entity for Narwal vacuum integration."""
+"""Bazowe klasy encji integracji Narwal Flow 2."""
 
 from __future__ import annotations
 
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER, configured_model_name
+from .const import DOMAIN, MANUFACTURER, MODEL
 from .coordinator import NarwalCoordinator
 
 
 def narwal_robot_device_info(coordinator: NarwalCoordinator) -> DeviceInfo:
-    """Return device info for the robot vacuum."""
+    """Urządzenie robota."""
     device_id = coordinator.config_entry.data["device_id"]
     return DeviceInfo(
         identifiers={(DOMAIN, device_id)},
         manufacturer=MANUFACTURER,
-        model=configured_model_name(coordinator.config_entry.data),
+        model=MODEL,
         sw_version=coordinator.client.state.firmware_version or None,
         name=coordinator.config_entry.title,
     )
 
 
 def narwal_dock_device_info(coordinator: NarwalCoordinator) -> DeviceInfo:
-    """Return device info for the robot dock/base station."""
+    """Urządzenie stacji (dok) podpięte pod robota."""
     device_id = coordinator.config_entry.data["device_id"]
-    return DeviceInfo(
+    info = DeviceInfo(
         identifiers={(DOMAIN, f"{device_id}_dock")},
         manufacturer=MANUFACTURER,
-        model=f"{configured_model_name(coordinator.config_entry.data)} Dock",
+        model=f"{MODEL} Dock",
         sw_version=coordinator.client.state.firmware_version or None,
         name=f"{coordinator.config_entry.title} Dock",
-        via_device=(DOMAIN, device_id),
     )
+    if coordinator.robot_device_id:
+        info["via_device_id"] = coordinator.robot_device_id
+    return info
 
 
 class NarwalEntity(CoordinatorEntity[NarwalCoordinator]):
-    """Base class for Narwal entities."""
+    """Encja robota."""
 
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: NarwalCoordinator) -> None:
-        """Initialize the entity."""
+        """Inicjalizacja."""
         super().__init__(coordinator)
         self._attr_device_info = narwal_robot_device_info(coordinator)
 
     @property
     def available(self) -> bool:
-        """Return True if the entity is available."""
+        """Dostępna, gdy koordynator ma aktualne dane."""
         return self.coordinator.last_update_success
 
 
 class NarwalDockEntity(NarwalEntity):
-    """Base class for Narwal dock/base-station entities."""
+    """Encja stacji."""
 
     def __init__(self, coordinator: NarwalCoordinator) -> None:
-        """Initialize the dock entity."""
+        """Inicjalizacja."""
         super().__init__(coordinator)
         self._attr_device_info = narwal_dock_device_info(coordinator)

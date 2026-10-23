@@ -15,7 +15,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import NarwalConfigEntry
-from .const import DOCK_LIGHT_MODE_NAMES, DOCK_LIGHT_MODES, is_dock_light_supported
+from .const import DOCK_LIGHT_MODE_NAMES, DOCK_LIGHT_MODES
 from .coordinator import NarwalCoordinator
 from .entity import NarwalDockEntity
 from .narwal_client import CommandResult
@@ -30,8 +30,6 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Narwal dock light entities."""
-    if not is_dock_light_supported(entry.data, entry.options):
-        return
     async_add_entities([NarwalDockLight(entry.runtime_data)])
 
 

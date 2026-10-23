@@ -1,17 +1,26 @@
 {
   "domain": "narwal",
-  "name": "Narwal Flow Robot Vacuum",
-  "codeowners": ["@sjmotew"],
+  "name": "Narwal Flow 2",
+  "codeowners": [
+    "@puchalskipl"
+  ],
   "config_flow": true,
   "dependencies": [],
   "dhcp": [
-    { "hostname": "narwal_*" }
+    {
+      "hostname": "narwal_*"
+    }
   ],
-  "documentation": "https://github.com/sjmotew/NarwalIntegration",
+  "documentation": "https://github.com/puchalskipl/narwal-flow-2",
   "integration_type": "device",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/sjmotew/NarwalIntegration/issues",
-  "requirements": ["bbpb>=1.4.0"],
-  "version": "1.0.10",
-  "zeroconf": ["_narwal_sweeper._tcp.local."]
+  "issue_tracker": "https://github.com/puchalskipl/narwal-flow-2/issues",
+  "requirements": [
+    "bbpb>=1.4.0",
+    "websockets>=12.0"
+  ],
+  "version": "1.1.0",
+  "zeroconf": [
+    "_narwal_sweeper._tcp.local."
+  ]
 }

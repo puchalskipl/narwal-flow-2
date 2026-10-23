@@ -1,25 +1,9 @@
-# NarwalIntegration — Claude rules
+# narwal-flow-2 — zasady pracy
 
-## Project
-- Home Assistant custom integration for Narwal vacuums; local WebSocket API on port 9002. Repo: sjmotew/NarwalIntegration.
-- `narwal_client/` and `custom_components/narwal/narwal_client/` MUST stay identical (HACS needs the embedded copy).
-- Use `py`, not `python`. Tests: `py -m pytest -q`. Use `gh` for GitHub; merge stacked PRs with `gh pr merge --merge` in order.
-- Release discipline: CI green on the exact SHA → deploy to HA at 10.0.0.5 → verify live → tag. Never tag first.
-- Tests cannot catch Hassfest manifest rules; check the Hassfest CI job, not just Tests.
-
-## GSD usage
-- Default to `/gsd-quick` for anything under ~3 files or a single bug. Use phases only for ROADMAP items.
-- Research, plan-check, verifier and code-review are OFF in `.planning/config.json`. For risky work, re-enable for that phase only (`/gsd-plan-phase --research`, or set `workflow.verifier: true` then revert) or run `/gsd-verify-work` afterwards.
-- `/clear` between discuss → plan → execute. GSD persists state in `.planning/`; the context window does not need to.
-- Hand subagents file paths, not pasted contents. Never paste `.planning/` history into a prompt.
-- `.planning/` is gitignored and untracked. Do not commit it.
-
-## MCP
-- The home-assistant MCP is for release verification only (entity counts, repairs, restart). Do not call it while coding.
-- The github and context7 plugins are disabled for this repo in `.claude/settings.local.json`; use `gh`.
-
-## Response style
-- Answer first. No preamble, no restating the plan, no end-of-task recap.
-- Show diffs or changed hunks, never full files, unless asked.
-- One line per completed step. Tables only for 3+ parallel items.
-- Do not re-read files already in context or re-run checks already green this session.
+- Integracja HA tylko dla Narwal Flow 2 (klucze produktu w `custom_components/narwal/const.py`). Kod dla innych modeli nie wraca.
+- `narwal_client/` i `custom_components/narwal/narwal_client/` muszą być identyczne (test `test_integration_structure`).
+- Testy: venv z `requirements-dev.txt`, `python -m pytest -q`. Przed wgraniem do HA testy zielone.
+- Wgrywanie: najpierw testowe HA (LXC 900), produkcja dopiero po zgodzie właściciela. Push do GitHuba tylko za zgodą.
+- Kontrakty, których nie łamać bez poprawy konsumentów w repo HA: usługa `narwal.clean_rooms` (pola `rooms`, `mode`, `suction`, `water`, `mop_strength`, `passes`, `mop_passes`, `route`), `unique_id` encji, domena `narwal`.
+- Komentarze i dokumentacja po polsku, bez średników w tekstach. Komunikaty błędów usług HA zostają po angielsku do czasu tłumaczeń wyjątków.
+- Bez PR do repozytorium autora (upstream `sjmotew/NarwalIntegration`), poprawki autora bierzemy przez `git fetch upstream` i cherry-pick.

@@ -9,7 +9,7 @@ import logging
 import random
 import time
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -333,14 +333,12 @@ class NarwalClient:
         port: int = DEFAULT_PORT,
         device_id: str = "",
         topic_prefix: str | None = None,
-        supports_broadcasts: bool = True,
     ) -> None:
         self.host = host
         self.port = port
         self.device_id = device_id
         self.url = f"ws://{_url_host(host)}:{port}"
         self.topic_prefix = topic_prefix or DEFAULT_TOPIC_PREFIX
-        self.supports_broadcasts = supports_broadcasts
         self.state = NarwalState()
         self.on_state_update: Callable[[NarwalState], None] | None = None
         self.on_display_map: Callable[[NarwalState], None] | None = None
@@ -392,10 +390,8 @@ class NarwalClient:
         return self._robot_awake
 
     def _mark_response_received(self) -> None:
-        """Record an addressed response as reachability for non-broadcast models."""
+        """Record the time of the last addressed response."""
         self._last_response_time = time.monotonic()
-        if not self.supports_broadcasts:
-            self._robot_awake = True
 
     @property
     def last_broadcast_age(self) -> float:
@@ -679,8 +675,7 @@ class NarwalClient:
                     # interrupt, but only if we send commands before it
                     # expires.  Don't wait for the keepalive loop's first
                     # tick (15s delay would be too late).
-                    if self.supports_broadcasts:
-                        await self._send_wake_burst()
+                    await self._send_wake_burst()
 
                 retry_delay = RECONNECT_INITIAL_DELAY  # reset on success
                 self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
@@ -930,8 +925,6 @@ class NarwalClient:
         Returns:
             True if the robot has confirmed local reachability, False otherwise.
         """
-        if not self.supports_broadcasts:
-            return self.connected
         if self._robot_awake and not force:
             return True
 
@@ -1025,9 +1018,6 @@ class NarwalClient:
                 await asyncio.sleep(KEEPALIVE_INTERVAL)
                 if not self.connected or not self._ws:
                     break
-
-                if not self.supports_broadcasts:
-                    continue
 
                 # Check if broadcasts have gone stale (robot fell back asleep)
                 if (
@@ -1580,26 +1570,25 @@ class NarwalClient:
         mop_strength: MopStrengthLevel = MopStrengthLevel.NORMAL,
         passes: int = 1,
         route: CleaningRoute | None = None,
-        room_settings: Mapping[int, RoomCleanSettings] | None = None,
+        mop_passes: int | None = None,
     ) -> bytes:
         """Build a clean/start_clean request for the given rooms.
 
         StartClean_Request{1: CleanTask{1: map_id, 2: [CleanItem...], 3: {} (TaskOption),
         5: taskType}}; CleanItem{1: ZoneOption{1: 1 (room zone), 2: room_id}, 2: CleanParam,
-        3: order}. Uniform tasks use the WorkMode as taskType. Mixed-mode tasks use
-        the app's custom taskType (6), with each CleanParam carrying its own mode.
+        3: order}. The task type is the WorkMode; every room carries the same CleanParam.
         overlapLevel is CleanParam tag 8 when supplied.
 
         Args:
-            room_ids: Robot room IDs (RoomInfo.room_id).
-            map_id: Active map id (MapData.map_id, get_map field 2.1).
+            room_ids: Robot room IDs (RoomInfo.room_id), in cleaning order.
+            map_id: Map id (MapData.map_id, get_map field 2.1).
             work_mode: Vacuum / mop / vacuum-then-mop / vacuum-and-mop.
             fan: Suction level (CleanParam tag 2).
             water: Mop water volume (tag 4).
             mop_strength: Mop scrub intensity (tag 3).
             passes: Clean count, routed to the pass tag(s) for the mode.
             route: Optional route overlap level (tag 8).
-            room_settings: Optional per-room settings keyed by robot room ID.
+            mop_passes: Vacuum-then-mop only: mop pass count (tag 6), defaults to passes.
         """
         import blackboxprotobuf
 
@@ -1610,12 +1599,9 @@ class NarwalClient:
             mop_strength=mop_strength,
             passes=passes,
             route=route,
+            mop_passes=mop_passes,
         )
-        settings_by_room = (
-            {rid: room_settings.get(rid, default_settings) for rid in room_ids}
-            if room_settings
-            else {rid: default_settings for rid in room_ids}
-        )
+        settings_by_room = {rid: default_settings for rid in room_ids}
         task_type = self._task_type_for_settings(
             list(settings_by_room.values()),
         )
@@ -1668,7 +1654,8 @@ class NarwalClient:
         mop_strength: MopStrengthLevel = MopStrengthLevel.NORMAL,
         passes: int = 1,
         route: CleaningRoute | None = None,
-        room_settings: Mapping[int, RoomCleanSettings] | None = None,
+        mop_passes: int | None = None,
+        map_id: int | None = None,
     ) -> CommandResponse:
         """Start cleaning the given rooms via clean/start_clean.
 
@@ -1684,9 +1671,9 @@ class NarwalClient:
 
         Args:
             room_ids: Robot room IDs (RoomInfo.room_id), mapped from HA areas.
-            work_mode, fan, water, mop_strength, passes, route: CleanParam settings —
-                see _build_start_clean_payload.
-            room_settings: Optional per-room settings keyed by robot room ID.
+            work_mode, fan, water, mop_strength, passes, route, mop_passes: CleanParam
+                settings, see _build_start_clean_payload.
+            map_id: Map to clean on. None means the active map (get_map field 2.1).
         """
         if not room_ids:
             return CommandResponse(result_code=CommandResult.NOT_READY)
@@ -1698,14 +1685,15 @@ class NarwalClient:
                 )
                 return CommandResponse(result_code=CommandResult.NOT_APPLICABLE)
 
-            map_data = self.state.map_data
-            if not map_data or not map_data.map_id:
-                try:
-                    map_data = await self.get_map()
-                except NarwalCommandError as err:
-                    _LOGGER.warning("start_rooms: map fetch failed: %s", err)
-                    map_data = self.state.map_data
-            map_id = map_data.map_id if map_data else 0
+            if map_id is None:
+                map_data = self.state.map_data
+                if not map_data or not map_data.map_id:
+                    try:
+                        map_data = await self.get_map()
+                    except NarwalCommandError as err:
+                        _LOGGER.warning("start_rooms: map fetch failed: %s", err)
+                        map_data = self.state.map_data
+                map_id = map_data.map_id if map_data else 0
             if not map_id:
                 _LOGGER.warning(
                     "start_rooms: no active map id available; cannot start room clean"
@@ -1722,7 +1710,7 @@ class NarwalClient:
                     mop_strength=mop_strength,
                     passes=passes,
                     route=route,
-                    room_settings=room_settings,
+                    mop_passes=mop_passes,
                 )
             except ValueError as err:
                 _LOGGER.warning("start_rooms: %s", err)
@@ -1937,26 +1925,8 @@ class NarwalClient:
             return response
 
     def _start_blocked(self) -> bool:
-        """Return true when local state proves a start must not be dispatched.
-
-        The guard reads `is_docked`, `_clean_session_context` and friends, all
-        of which assume state that tracks the robot. Models which never
-        broadcast lag badly enough to break that assumption: a Freo Z Ultra
-        (CX7, `hEA7OEshlx`, fw v01.13.11.02) sat at `working_status` 19
-        (TASK_COMPLETED) with a field-3 subtree of `{1: 19, 18: 1}` that did
-        not change across 40s while the robot physically drove back to its
-        dock. While it sits there `_clean_session_context` is true and every
-        start is refused before a frame is ever sent. It does clear eventually,
-        so the refusal is intermittent rather than permanent.
-
-        The robot arbitrates correctly on its own. Sent directly to that CX7
-        while the guard claimed a clean session was live, `clean/start_clean`
-        for one room in vacuum-only mode returned SUCCESS and
-        `clean/current_clean_task/get` read the task back unchanged. So on
-        these models let the robot answer, and surface its CONFLICT /
-        NOT_APPLICABLE / NOT_READY if it declines.
-        """
-        return self.supports_broadcasts and _robot_start_blocked(self.state)
+        """Return true when local state proves a start must not be dispatched."""
+        return _robot_start_blocked(self.state)
 
     async def return_to_base(self, timeout: float = COMMAND_RESPONSE_TIMEOUT) -> CommandResponse:
         """Return to charging dock."""

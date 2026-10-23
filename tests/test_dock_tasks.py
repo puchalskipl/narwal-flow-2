@@ -83,7 +83,7 @@ def test_dock_task_switch_belongs_to_dock_device() -> None:
     switch = _switch(DOCK_TASK_EMPTY_DUSTBIN)
 
     assert switch._attr_device_info["identifiers"] == {("narwal", "test_device_dock")}
-    assert switch._attr_device_info["via_device"] == ("narwal", "test_device")
+    assert "via_device_id" in switch._attr_device_info
 
 
 def test_idle_docked_state_can_start_any_single_task() -> None:

@@ -1,16 +1,7 @@
-"""Diagnostics support for the Narwal vacuum integration.
+"""Diagnostyka integracji Narwal Flow 2.
 
-Most questions this project receives are some form of "does my model work?",
-and answering one has meant asking the reporter for a product key, a firmware
-string, a port scan and a log line, one comment at a time. #81 took three
-releases to resolve because nobody had the robot's product key in front of
-them: it was `mkbqaprvrb`, a Flow 2 key the integration had never seen.
-
-This dump exists so that whole exchange becomes a single attachment. It leans
-deliberately towards including undecoded data — `raw_base_status` is the field
-map we reverse-engineer new models from — and the `model_resolution` section
-states plainly whether this build recognises the robot's key at all, which is
-the question behind most model reports.
+Zrzut zawiera także nieodkodowane dane (`raw_base_status` to mapa pól,
+z której rozpoznaje się nowe pola protokołu).
 """
 
 from __future__ import annotations
@@ -22,15 +13,7 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 
 from . import NarwalConfigEntry
-from .const import (
-    CONF_DEVICE_ID,
-    CONF_MODEL,
-    CONF_PRODUCT_KEY,
-    NARWAL_MODELS,
-    configured_model_name,
-    model_label_for_product_key,
-)
-from .narwal_client.const import KNOWN_PRODUCT_KEYS
+from .const import CONF_DEVICE_ID
 
 # `product_key` is deliberately NOT redacted — it is the single most useful
 # value in this file and identifies a model, not a person. What is redacted
@@ -59,28 +42,6 @@ def _device_id_suffix(device_id: str | None) -> str | None:
     if not device_id or len(device_id) < 6:
         return None
     return device_id[-6:].lower()
-
-
-def _model_resolution(entry: NarwalConfigEntry, resolved_key: str | None) -> dict[str, Any]:
-    """How this build names the robot, and whether it recognises its key.
-
-    `key_is_known` false is the interesting case and the reason this section
-    exists: it means the robot works but the integration has no name for it,
-    which is a one-line fix once someone can see it.
-    """
-    stored_key = entry.data.get(CONF_PRODUCT_KEY)
-    return {
-        "stored_product_key": stored_key,
-        "resolved_product_key": resolved_key,
-        "stored_model_label": entry.data.get(CONF_MODEL),
-        "label_for_resolved_key": model_label_for_product_key(resolved_key),
-        "device_registry_model": configured_model_name(dict(entry.data)),
-        "key_is_known": resolved_key in KNOWN_PRODUCT_KEYS if resolved_key else None,
-        "key_is_selectable": resolved_key in set(NARWAL_MODELS.values())
-        if resolved_key
-        else None,
-        "keys_disagree": bool(stored_key and resolved_key and stored_key != resolved_key),
-    }
 
 
 def _map_summary(map_data: Any) -> dict[str, Any] | None:
@@ -137,7 +98,6 @@ async def async_get_config_entry_diagnostics(
     client = coordinator.client
     state = client.state
     device_info = state.device_info
-    resolved_key = (client.topic_prefix or "").lstrip("/") or None
 
     diagnostics: dict[str, Any] = {
         "entry": {
@@ -145,7 +105,6 @@ async def async_get_config_entry_diagnostics(
             "data": dict(entry.data),
             "options": dict(entry.options),
         },
-        "model_resolution": _model_resolution(entry, resolved_key),
         "device": {
             "product_key": device_info.product_key if device_info else None,
             "firmware_version": state.firmware_version or None,
@@ -157,7 +116,6 @@ async def async_get_config_entry_diagnostics(
         "connection": {
             "connected": client.connected,
             "topic_prefix": client.topic_prefix,
-            "supports_broadcasts": client.supports_broadcasts,
             "robot_awake": client.robot_awake,
             "last_update_success": coordinator.last_update_success,
             "has_fresh_state": coordinator.has_fresh_state,

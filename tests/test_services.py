@@ -27,7 +27,6 @@ from custom_components.narwal import (  # noqa: E402
     _async_room_ids_for_coordinator,
     _async_validate_clean_rooms_targets,
     _normalise_room_ids,
-    _suction_for_coordinator,
     _validate_pass_count,
 )
 from custom_components.narwal.const import DOMAIN, SERVICE_CLEAN_ROOMS  # noqa: E402
@@ -208,9 +207,9 @@ async def test_clean_rooms_service_passes_mop_passes_for_vacuum_then_mop() -> No
     ):
         await handler(call)
 
-    room_settings = coordinator.client.start_rooms.await_args.kwargs["room_settings"]
-    assert {s.passes for s in room_settings.values()} == {1}
-    assert {s.mop_passes for s in room_settings.values()} == {3}
+    kwargs = coordinator.client.start_rooms.await_args.kwargs
+    assert kwargs["passes"] == 1
+    assert kwargs["mop_passes"] == 3
 
 
 async def test_clean_rooms_service_supports_legacy_entity_extractor() -> None:
@@ -260,12 +259,12 @@ async def test_clean_rooms_service_accepts_async_accepted_response() -> None:
     coordinator.async_set_updated_data.assert_called_once_with(coordinator.client.state)
 
 
-async def test_clean_rooms_service_uses_requested_settings_over_room_profiles() -> None:
-    """Explicit service settings should not be silently overridden by room profiles."""
+async def test_clean_rooms_service_maps_super_powerful_to_deep() -> None:
+    """Najwyższy poziom Flow 2 (super_powerful) to CleanParam tag 2 = 4 (DEEP)."""
     coordinator = _coordinator()
-    coordinator.set_room_clean_setting(4, "fan", FanLevel.MUTE)
     handler, registry = _register_clean_rooms_handler(coordinator)
     call = _clean_rooms_call()
+    call.data[FIELD_SUCTION] = "super_powerful"
 
     with (
         patch(
@@ -277,40 +276,7 @@ async def test_clean_rooms_service_uses_requested_settings_over_room_profiles() 
     ):
         await handler(call)
 
-    kwargs = coordinator.client.start_rooms.await_args.kwargs
-    assert kwargs["room_settings"][4].fan == FanLevel.STRONG
-    assert kwargs["room_settings"][7].fan == FanLevel.STRONG
-
-
-@pytest.mark.parametrize(
-    ("product_key", "expected"),
-    [
-        ("QoEsI5qYXO", FanLevel.SUPER),
-        ("qV6BujoYLz", FanLevel.DEEP),
-    ],
-)
-async def test_clean_rooms_service_resolves_max_for_each_model(
-    product_key: str,
-    expected: FanLevel,
-) -> None:
-    """The max alias resolves through each model's visible tiers."""
-    coordinator = _coordinator(product_key=product_key)
-    handler, registry = _register_clean_rooms_handler(coordinator)
-    call = _clean_rooms_call()
-    call.data[FIELD_SUCTION] = "max"
-
-    with (
-        patch(
-            "custom_components.narwal.service.async_extract_entity_ids",
-            new_callable=AsyncMock,
-            return_value=["vacuum.downstairs_narwal"],
-        ),
-        patch("custom_components.narwal.er.async_get", return_value=registry),
-    ):
-        await handler(call)
-
-    room_settings = coordinator.client.start_rooms.await_args.kwargs["room_settings"]
-    assert all(settings.fan == expected for settings in room_settings.values())
+    assert coordinator.client.start_rooms.await_args.kwargs["fan"] is FanLevel.DEEP
 
 
 async def test_clean_rooms_service_rejects_unavailable_start() -> None:
@@ -371,58 +337,6 @@ async def test_clean_rooms_service_preserves_settings_on_rejected_start() -> Non
 
     assert coordinator.clean_settings == original_settings
     assert not coordinator.client.state.has_assumed_robot_clean
-
-
-async def test_clean_rooms_service_rejects_unsupported_ultra_suction() -> None:
-    """AX26 must not silently map unsupported Ultra suction to Strong."""
-    coordinator = _coordinator(product_key="qV6BujoYLz")
-    handler, registry = _register_clean_rooms_handler(coordinator)
-    call = _clean_rooms_call()
-    call.data[FIELD_SUCTION] = "ultra"
-
-    with (
-        patch(
-            "custom_components.narwal.service.async_extract_entity_ids",
-            new_callable=AsyncMock,
-            return_value=["vacuum.downstairs_narwal"],
-        ),
-        patch("custom_components.narwal.er.async_get", return_value=registry),
-        pytest.raises(Exception, match="Ultra suction is not supported"),
-    ):
-        await handler(call)
-
-    coordinator.client.start_rooms.assert_not_awaited()
-
-
-def test_clean_rooms_ultra_alias_keeps_historical_level() -> None:
-    """The hidden service alias keeps its prior SUPER enum meaning."""
-    assert _suction_for_coordinator(_coordinator(), "ultra") is FanLevel.SUPER
-
-    with pytest.raises(Exception, match="Ultra suction is not supported"):
-        _suction_for_coordinator(_coordinator(product_key="qV6BujoYLz"), "ultra")
-
-
-def test_clean_rooms_ultra_powerful_uses_level_five_when_supported() -> None:
-    """The canonical top tier uses SUPER and remains model-gated."""
-    assert _suction_for_coordinator(_coordinator(), "ultra_powerful") is FanLevel.SUPER
-
-    with pytest.raises(Exception, match="Ultra Powerful suction is not supported"):
-        _suction_for_coordinator(
-            _coordinator(product_key="qV6BujoYLz"),
-            "ultra_powerful",
-        )
-
-
-def test_clean_rooms_super_alias_keeps_historical_level() -> None:
-    """The hidden service alias keeps its pre-rename DEEP enum meaning."""
-    assert _suction_for_coordinator(_coordinator(), "super") is FanLevel.DEEP
-    assert (
-        _suction_for_coordinator(
-            _coordinator(product_key="qV6BujoYLz"),
-            "super",
-        )
-        is FanLevel.DEEP
-    )
 
 
 async def test_clean_rooms_service_rejects_invalid_room_ids() -> None:

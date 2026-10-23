@@ -127,54 +127,6 @@ class TestRedaction:
         assert _device_id_suffix("abc") is None
 
 
-class TestModelResolution:
-    """The section that would have closed #81 in one comment."""
-
-    async def test_unknown_key_is_reported_as_unknown(self) -> None:
-        """A working robot the integration cannot name is the interesting case.
-
-        @DeNo64's Flow 2 reported `mkbqaprvrb` and ran fine for three releases
-        while being called "Narwal Flow", because nothing surfaced that the key
-        was unrecognised.
-        """
-        entry = _make_entry(product_key="zzzzUNKNOWN", model="Narwal Flow")
-        state = _make_state(product_key="zzzzUNKNOWN")
-        _make_entry_with_runtime(entry, state)
-        entry.runtime_data.client.topic_prefix = "/zzzzUNKNOWN"
-
-        result = await async_get_config_entry_diagnostics(MagicMock(), entry)
-        resolution = result["model_resolution"]
-
-        assert resolution["resolved_product_key"] == "zzzzUNKNOWN"
-        assert resolution["key_is_known"] is False
-        assert resolution["label_for_resolved_key"] is None
-
-    async def test_alias_key_is_known_but_not_selectable(self) -> None:
-        """`mkbqaprvrb` names a model without appearing in the dropdown."""
-        entry = _make_entry(product_key="mkbqaprvrb", model="Narwal Flow 2")
-        state = _make_state(product_key="mkbqaprvrb")
-        _make_entry_with_runtime(entry, state)
-        entry.runtime_data.client.topic_prefix = "/mkbqaprvrb"
-
-        result = await async_get_config_entry_diagnostics(MagicMock(), entry)
-        resolution = result["model_resolution"]
-
-        assert resolution["key_is_known"] is True
-        assert resolution["key_is_selectable"] is False
-        assert resolution["label_for_resolved_key"] == "Narwal Flow 2"
-
-    async def test_disagreement_between_stored_and_resolved_key_is_flagged(self) -> None:
-        """Stored key vs the key the robot actually answers on."""
-        entry = _make_entry(product_key="QoEsI5qYXO")
-        state = _make_state(product_key="QxMSPG6VSO")
-        _make_entry_with_runtime(entry, state)
-        entry.runtime_data.client.topic_prefix = "/QxMSPG6VSO"
-
-        result = await async_get_config_entry_diagnostics(MagicMock(), entry)
-
-        assert result["model_resolution"]["keys_disagree"] is True
-
-
 class TestFeatureList:
     """A live round trip that must never hang the diagnostics download."""
 

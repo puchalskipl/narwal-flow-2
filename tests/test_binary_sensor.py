@@ -151,7 +151,7 @@ def test_station_problem_sensors_belong_to_dock_device() -> None:
     assert dock_sensor._attr_device_info["identifiers"] == {
         ("narwal", "test_device_dock")
     }
-    assert dock_sensor._attr_device_info["via_device"] == ("narwal", "test_device")
+    assert "via_device_id" in dock_sensor._attr_device_info
     assert not _DESCS["maintenance_required"].dock_device
     assert robot_sensor._attr_device_info["identifiers"] == {("narwal", "test_device")}
 
@@ -166,7 +166,7 @@ def test_station_value_sensors_belong_to_dock_device() -> None:
     assert dock_sensor._attr_device_info["identifiers"] == {
         ("narwal", "test_device_dock")
     }
-    assert dock_sensor._attr_device_info["via_device"] == ("narwal", "test_device")
+    assert "via_device_id" in dock_sensor._attr_device_info
     assert not _SENSOR_DESCS["battery"].dock_device
     assert robot_sensor._attr_device_info["identifiers"] == {("narwal", "test_device")}
 

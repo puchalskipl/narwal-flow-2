@@ -1,4 +1,4 @@
-"""Map camera entity for Narwal vacuum — MJPEG streaming for live updates."""
+"""Kamera mapy Narwala — strumień MJPEG z podglądem na żywo."""
 
 from __future__ import annotations
 
@@ -13,23 +13,12 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import NarwalConfigEntry
-from .const import (
-    CONF_MAP_ROTATION,
-    CONF_MAP_ZOOM,
-    CONF_SHOW_FURNITURE,
-    CONF_SHOW_FURNITURE_LABELS,
-    CONF_SHOW_ROOM_LABELS,
-    MAP_OPTION_DEFAULTS,
-    MAP_ROTATION_DEFAULT,
-    MAP_ZOOM_DEFAULT,
-)
 from .coordinator import (
     NATIVE_TRAJECTORY_MAX_POINTS,
     NATIVE_TRAJECTORY_RECENT_TAIL_POINTS,
     NarwalCoordinator,
 )
 from .entity import NarwalEntity
-from .narwal_client.const import WorkingStatus
 from .narwal_client.models import overlay_to_grid
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,6 +33,11 @@ _NATIVE_TRAIL_MIN_GRID_DELTA = 0.25
 _NATIVE_TRAIL_MAX_POINTS = NATIVE_TRAJECTORY_MAX_POINTS
 _NATIVE_TRAIL_RECENT_TAIL_POINTS = NATIVE_TRAJECTORY_RECENT_TAIL_POINTS
 
+# Opcje rysowania mapy: etykiety pokoi zawsze, meble i ich podpisy bez (nowy
+# renderer mapy dojdzie w kolejnym etapie), bez obrotu i powiększenia.
+_MAP_OPTIONS_KEY: tuple[bool, bool, bool] = (True, False, False)
+_VIEW_OPTIONS_KEY: tuple[int, float] = (0, 1.0)
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: NarwalConfigEntry,
@@ -51,46 +45,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Narwal camera entities."""
     coordinator = entry.runtime_data
-    async_add_entities([NarwalMapCamera(coordinator), NarwalCarpetCamera(coordinator)])
-
-
-class NarwalCarpetCamera(NarwalEntity, Camera):
-    """On-demand camera showing the robot's carpet-detection debug image.
-
-    Backed by developer/get_robot_debug_image, which returns cleartext PNGs (no
-    crypto). Images are only produced while the robot is mapping/cleaning, so this
-    only polls in an active state and otherwise serves the last image.
-    """
-
-    _attr_name = "Carpet map"
-
-    def __init__(self, coordinator: NarwalCoordinator) -> None:
-        """Initialize the carpet debug camera entity."""
-        NarwalEntity.__init__(self, coordinator)
-        Camera.__init__(self)
-        device_id = coordinator.config_entry.data["device_id"]
-        self._attr_unique_id = f"{device_id}_carpet_map"
-        self._cached: bytes | None = None
-        self._cached_at: float = 0.0
-
-    async def async_camera_image(
-        self, width: int | None = None, height: int | None = None,
-    ) -> bytes | None:
-        """Return the latest carpet-detection PNG; poll only while active."""
-        state = self.coordinator.data
-        active = state is not None and (
-            state.is_cleaning or state.working_status == WorkingStatus.REMAPPING
-        )
-        if not active:
-            return self._cached  # keep last image; don't hit the WS while idle
-        now = time.monotonic()
-        if self._cached is not None and now - self._cached_at < 8.0:
-            return self._cached
-        img = await self.coordinator.client.get_robot_debug_image()
-        if img is not None:
-            self._cached = img
-            self._cached_at = now
-        return self._cached
+    async_add_entities([NarwalMapCamera(coordinator)])
 
 
 class NarwalMapCamera(NarwalEntity, Camera):
@@ -115,53 +70,12 @@ class NarwalMapCamera(NarwalEntity, Camera):
         # Cached base map (PIL Image) — only re-rendered when static map changes
         self._base_map_image = None  # PIL Image or None
         self._base_map_ts: int = 0  # created_at of the static map used for base
-        self._base_map_options_key: tuple[bool, bool, bool] = (
-            MAP_OPTION_DEFAULTS[CONF_SHOW_ROOM_LABELS],
-            MAP_OPTION_DEFAULTS[CONF_SHOW_FURNITURE],
-            MAP_OPTION_DEFAULTS[CONF_SHOW_FURNITURE_LABELS],
-        )
         self._room_label_points: list[tuple[str, float, float]] = []
 
     @property
     def extra_state_attributes(self) -> dict[str, int]:
         """Expose a changing value so HA publishes each rendered frame."""
         return {"render_count": self._render_count}
-
-    def _map_option(self, key: str) -> bool:
-        """Return a persisted map display option."""
-        return bool(
-            self.coordinator.config_entry.options.get(
-                key,
-                MAP_OPTION_DEFAULTS[key],
-            )
-        )
-
-    def _map_rotation(self) -> int:
-        """Return persisted clockwise map rotation in degrees."""
-        try:
-            rotation = int(
-                self.coordinator.config_entry.options.get(
-                    CONF_MAP_ROTATION,
-                    MAP_ROTATION_DEFAULT,
-                )
-            )
-        except (TypeError, ValueError):
-            return MAP_ROTATION_DEFAULT
-        rotation %= 360
-        return rotation if rotation in (0, 90, 180, 270) else MAP_ROTATION_DEFAULT
-
-    def _map_zoom(self) -> float:
-        """Return persisted map zoom factor."""
-        try:
-            zoom = float(
-                self.coordinator.config_entry.options.get(
-                    CONF_MAP_ZOOM,
-                    MAP_ZOOM_DEFAULT,
-                )
-            )
-        except (TypeError, ValueError):
-            return MAP_ZOOM_DEFAULT
-        return max(1.0, min(2.0, zoom))
 
     async def async_camera_image(
         self, width: int | None = None, height: int | None = None,
@@ -332,12 +246,8 @@ class NarwalMapCamera(NarwalEntity, Camera):
             return
 
         static_ts = static_map.created_at or 0
-        map_options_key = (
-            self._map_option(CONF_SHOW_ROOM_LABELS),
-            self._map_option(CONF_SHOW_FURNITURE),
-            self._map_option(CONF_SHOW_FURNITURE_LABELS),
-        )
-        view_options_key = (self._map_rotation(), self._map_zoom())
+        map_options_key = _MAP_OPTIONS_KEY
+        view_options_key = _VIEW_OPTIONS_KEY
         if display:
             new_key = (
                 static_ts,
@@ -420,16 +330,8 @@ class NarwalMapCamera(NarwalEntity, Camera):
 
         # Rebuild base map only when static map data changes
         static_ts = static_map.created_at or 0
-        map_options_key = (
-            self._map_option(CONF_SHOW_ROOM_LABELS),
-            self._map_option(CONF_SHOW_FURNITURE),
-            self._map_option(CONF_SHOW_FURNITURE_LABELS),
-        )
-        if (
-            self._base_map_image is None
-            or static_ts != self._base_map_ts
-            or map_options_key != self._base_map_options_key
-        ):
+        map_options_key = _MAP_OPTIONS_KEY
+        if self._base_map_image is None or static_ts != self._base_map_ts:
             room_names: dict[int, str] | None = None
             if map_options_key[0] and static_map.rooms:
                 room_names = {
@@ -454,7 +356,6 @@ class NarwalMapCamera(NarwalEntity, Camera):
             if base_img:
                 self._base_map_image = base_img
                 self._base_map_ts = static_ts
-                self._base_map_options_key = map_options_key
                 self._room_label_points = await self.hass.async_add_executor_job(
                     room_label_points,
                     static_map.compressed_map,
@@ -478,8 +379,8 @@ class NarwalMapCamera(NarwalEntity, Camera):
                 self._base_map_image,
                 static_map,
                 display,
-                self._map_rotation(),
-                self._map_zoom(),
+                _VIEW_OPTIONS_KEY[0],
+                _VIEW_OPTIONS_KEY[1],
                 self._room_label_points,
             )
 

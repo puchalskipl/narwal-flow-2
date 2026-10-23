@@ -1,0 +1,159 @@
+{
+  "config": {
+    "flow_title": "Narwal Flow 2 ({host})",
+    "step": {
+      "user": {
+        "title": "Połączenie z Narwal Flow 2",
+        "description": "Podaj adres IP robota Narwal Flow 2. Tożsamość robota jest odczytywana lokalnie przez WebSocket.",
+        "data": {
+          "host": "Adres IP",
+          "port": "Port"
+        }
+      },
+      "device_id": {
+        "title": "Podaj Device ID",
+        "description": "Automatyczne wykrywanie nie zadziałało. Podaj 32-znakowy Device ID robota albo zaznacz pole, żeby spróbować ponownie (robot mógł spać).",
+        "data": {
+          "device_id": "Device ID",
+          "retry_auto_detect": "Spróbuj ponownie wykryć automatycznie"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nie można połączyć się z robotem. Sprawdź adres IP i czy robot jest włączony.",
+      "unknown": "Nieoczekiwany błąd.",
+      "device_id_required": "Podaj Device ID albo zaznacz „Spróbuj ponownie wykryć automatycznie”."
+    },
+    "abort": {
+      "already_configured": "Ten robot jest już skonfigurowany.",
+      "unsupported_model": "Ta integracja obsługuje tylko Narwal Flow 2. Robot zgłasza inny klucz produktu."
+    }
+  },
+  "entity": {
+    "vacuum": {
+      "vacuum": {
+        "name": "Odkurzacz",
+        "state_attributes": {
+          "fan_speed": {
+            "state": {
+              "quiet": "Cicha",
+              "standard": "Standardowa",
+              "strong": "Silna",
+              "super_powerful": "Super mocna"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "cleaning_area": {
+        "name": "Powierzchnia"
+      },
+      "cleaning_time": {
+        "name": "Czas sprzątania"
+      },
+      "remaining_time": {
+        "name": "Pozostały czas"
+      },
+      "firmware_version": {
+        "name": "Firmware"
+      },
+      "dust_bag_health": {
+        "name": "Stan worka na kurz"
+      },
+      "detergent_remaining": {
+        "name": "Detergent"
+      },
+      "last_clean_result": {
+        "name": "Wynik ostatniego sprzątania",
+        "state": {
+          "normal_end": "Zakończone",
+          "user_force_end": "Przerwane przez użytkownika",
+          "shutdown_force_end": "Przerwane (wyłączenie)",
+          "low_battery_force_end": "Przerwane (niski akumulator)",
+          "overflow_force_end": "Przerwane (przepełniony zbiornik)",
+          "pause_too_long_force_end": "Przerwane (zbyt długa pauza)",
+          "system_error_force_end": "Przerwane (błąd systemu)",
+          "user_force_end_on_station": "Przerwane na stacji",
+          "user_force_end_on_app": "Przerwane z aplikacji",
+          "recall_end": "Przywołany do stacji",
+          "normal_end_replenish_map_fail": "Zakończone (błąd aktualizacji mapy)",
+          "map_unmatched_force_end": "Przerwane (mapa nie pasuje)",
+          "relocation_fail_with_station_force_end": "Przerwane (błąd lokalizacji)",
+          "relocation_fail_without_station_force_end": "Przerwane (błąd lokalizacji, bez stacji)",
+          "pretask_error_force_end": "Przerwane (błąd przed startem)",
+          "schedule_task_force_end": "Przerwane (harmonogram)",
+          "unexecuted": "Nie wykonane",
+          "not_find_pet": "Nie znaleziono zwierzaka"
+        }
+      },
+      "charging_state": {
+        "name": "Ładowanie",
+        "state": {
+          "charging": "Ładuje",
+          "fully_charged": "Naładowany",
+          "not_charging": "Nie ładuje"
+        }
+      }
+    },
+    "binary_sensor": {
+      "docked": {
+        "name": "W stacji",
+        "state": {
+          "on": "W stacji",
+          "off": "Poza stacją"
+        }
+      },
+      "error": {
+        "name": "Błąd",
+        "state": {
+          "on": "Problem",
+          "off": "OK"
+        }
+      },
+      "clean_water_tank": {
+        "name": "Zbiornik czystej wody"
+      },
+      "sewage_tank": {
+        "name": "Zbiornik brudnej wody"
+      },
+      "dust_box": {
+        "name": "Pojemnik na kurz"
+      },
+      "dust_bag": {
+        "name": "Worek na kurz"
+      },
+      "station_bag": {
+        "name": "Worek w stacji"
+      },
+      "maintenance_required": {
+        "name": "Wymaga konserwacji"
+      },
+      "replacement_required": {
+        "name": "Wymaga wymiany"
+      }
+    },
+    "light": {
+      "dock_light": {
+        "name": "Światło stacji"
+      }
+    },
+    "switch": {
+      "empty_dustbin": {
+        "name": "Opróżnianie pojemnika"
+      },
+      "wash_mop": {
+        "name": "Mycie mopa"
+      },
+      "dry_mop": {
+        "name": "Suszenie mopa"
+      },
+      "dry_dust_bin": {
+        "name": "Suszenie i dezynfekcja pojemnika"
+      },
+      "dry_dock_bag": {
+        "name": "Suszenie i dezynfekcja worka"
+      }
+    }
+  }
+}

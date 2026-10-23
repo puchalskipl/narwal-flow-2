@@ -1,19 +1,18 @@
 {
   "config": {
-    "flow_title": "Narwal vacuum ({host})",
+    "flow_title": "Narwal Flow 2 ({host})",
     "step": {
       "user": {
-        "title": "Connect to Narwal Vacuum",
-        "description": "Enter the IP address of your Narwal robot vacuum and select your model.",
+        "title": "Connect to Narwal Flow 2",
+        "description": "Enter the IP address of your Narwal Flow 2. The robot's identity is read over the local WebSocket.",
         "data": {
-          "host": "IP Address",
-          "port": "Port",
-          "model": "Model"
+          "host": "IP address",
+          "port": "Port"
         }
       },
       "device_id": {
         "title": "Enter Device ID",
-        "description": "Automatic discovery is unavailable. Enter the vacuum's 32-character cloud-assigned Device ID, or tick the box to retry automatic detection — useful if the robot was asleep on the first attempt. See the integration documentation for retrieval options.",
+        "description": "Automatic discovery is unavailable. Enter the robot's 32-character Device ID, or tick the box to retry automatic detection (useful if the robot was asleep).",
         "data": {
           "device_id": "Device ID",
           "retry_auto_detect": "Try automatic detection again"
@@ -21,18 +20,29 @@
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect to the vacuum. Check the IP address and ensure the vacuum is powered on.",
+      "cannot_connect": "Unable to connect to the robot. Check the IP address and that the robot is powered on.",
       "unknown": "An unexpected error occurred.",
       "device_id_required": "Enter a Device ID, or tick “Try automatic detection again”."
     },
     "abort": {
-      "already_configured": "This vacuum is already configured."
+      "already_configured": "This robot is already configured.",
+      "unsupported_model": "This integration supports only the Narwal Flow 2. The robot reports a different product key."
     }
   },
   "entity": {
     "vacuum": {
       "vacuum": {
-        "name": "Vacuum"
+        "name": "Vacuum",
+        "state_attributes": {
+          "fan_speed": {
+            "state": {
+              "quiet": "Quiet",
+              "standard": "Standard",
+              "strong": "Strong",
+              "super_powerful": "Super powerful"
+            }
+          }
+        }
       }
     },
     "sensor": {
@@ -81,8 +91,8 @@
         "name": "Charging",
         "state": {
           "charging": "Charging",
-          "fully_charged": "Fully Charged",
-          "not_charging": "Not Charging"
+          "fully_charged": "Fully charged",
+          "not_charging": "Not charging"
         }
       }
     },
@@ -123,37 +133,6 @@
         "name": "Replacement required"
       }
     },
-    "select": {
-      "work_mode": {
-        "name": "Clean mode",
-        "state": {
-          "vacuum": "Vacuum",
-          "mop": "Mop",
-          "vacuum_then_mop": "Vacuum then mop",
-          "vacuum_and_mop": "Vacuum and mop"
-        }
-      },
-      "water": {
-        "name": "Mopping humidity",
-        "state": {
-          "dry": "Slightly dry",
-          "normal": "Normal",
-          "wet": "Slightly wet"
-        }
-      },
-      "mop_strength": {
-        "name": "Mop strength",
-        "state": {
-          "normal": "Normal",
-          "high": "High"
-        }
-      }
-    },
-    "number": {
-      "passes": {
-        "name": "Cleaning passes"
-      }
-    },
     "light": {
       "dock_light": {
         "name": "Dock light"
@@ -174,15 +153,6 @@
       },
       "dry_dock_bag": {
         "name": "Dry and disinfect dock bag"
-      },
-      "show_room_labels": {
-        "name": "Show room labels"
-      },
-      "show_furniture": {
-        "name": "Show furniture"
-      },
-      "show_furniture_labels": {
-        "name": "Show furniture labels"
       }
     }
   }

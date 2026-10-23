@@ -23,8 +23,6 @@ PLATFORM_DOMAINS = {
     "vacuum": "vacuum",
     "sensor": "sensor",
     "binary_sensor": "binary_sensor",
-    "select": "select",
-    "number": "number",
     "switch": "switch",
     "light": "light",
 }

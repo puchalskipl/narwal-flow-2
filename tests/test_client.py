@@ -781,28 +781,6 @@ class TestNarwalClientInit:
         assert info.firmware_version == "v01.13.11.02"
         assert client.state.firmware_version == "v01.13.11.02"
 
-    def test_addressed_response_marks_non_broadcast_model_reachable(self) -> None:
-        """Non-broadcast models use command responses as reachability evidence."""
-        client = NarwalClient("10.0.0.1", supports_broadcasts=False)
-        assert not client.robot_awake
-
-        client._mark_response_received()
-
-        assert client.robot_awake
-        assert client._last_response_time > 0
-
-    @pytest.mark.asyncio
-    async def test_non_broadcast_wake_returns_without_waiting(self) -> None:
-        """A connected non-broadcast model does not wait for impossible broadcasts."""
-        client = NarwalClient("10.0.0.1", supports_broadcasts=False)
-        client._ws = AsyncMock()
-        client._connected.set()
-
-        with patch.object(client, "_send_wake_burst", new_callable=AsyncMock) as wake_burst:
-            assert await client.wake(timeout=10.0)
-
-        wake_burst.assert_not_awaited()
-
     @pytest.mark.asyncio
     async def test_discover_device_id_preserves_field5_product_key(self) -> None:
         """Auto-discovery must keep the product key that answered the wake probe."""

@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import filecmp
 import os
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import tests.ha_stubs
 

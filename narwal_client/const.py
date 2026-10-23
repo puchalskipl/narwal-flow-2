@@ -11,60 +11,16 @@ PROTOBUF_FIELD_TAG = 0x22  # field 4, wire type 2 (broadcasts/requests)
 TOPIC_LENGTH_OFFSET = 3
 TOPIC_DATA_OFFSET = 4
 
-# Default topic prefix — Narwal Flow (AX12) product key.
-# Overridden at runtime by NarwalClient once get_device_info returns
-# the actual product_key for the connected device.
-DEFAULT_TOPIC_PREFIX = "/QoEsI5qYXO"
+# Domyślny prefiks tematów — klucz produktu Narwal Flow 2. Klient nadpisuje go,
+# gdy get_device_info zwróci inny klucz tego samego modelu.
+DEFAULT_TOPIC_PREFIX = "/QxMSPG6VSO"
 
-# Known product keys for multi-model discovery.
-# During wake/discovery, the client cycles through these prefixes until
-# the robot responds. Once it does, the correct prefix is locked in.
-# Order: confirmed working models first, then unverified keys.
+# Klucze produktu, pod którymi zgłaszają się roboty Flow 2. Przy wybudzaniu
+# i wykrywaniu klient próbuje po kolei tych prefiksów.
 KNOWN_PRODUCT_KEYS = [
-    # Confirmed working (local WebSocket)
-    "QoEsI5qYXO",  # AX12 — Narwal Flow (primary, confirmed)
-    "QxMSPG6VSO",  # Narwal Flow 2 (confirmed working via local WebSocket)
-    "iSuVlI1If2",  # Narwal Flow 2 alternate key (confirmed working locally)
-    # Third Flow 2 key, reported by @DeNo64 (#81) on firmware v01.09.08.00.
-    # Fully working over the local WebSocket -- 28 entities -- but the entry was
-    # left unnamed until the key was added here.
-    "mkbqaprvrb",  # Narwal Flow 2 (confirmed working via local WebSocket)
-    "DrzDKQ0MU8",   # CX4  — Freo Z10 Ultra (confirmed by @irekkl-maker)
-    # AX26 — sold as both "Freo Z10 Turbo" (@romedtino, #40) and "Freo Z10 Pro"
-    # (@shin906710, #70); same key, same FW v01.02.00.15, so one platform.
-    "qV6BujoYLz",   # AX26 — Freo Z10 Pro / Turbo (confirmed local WebSocket)
-    # CX7 answers addressed local queries but emits no broadcasts.
-    "hEA7OEshlx",   # CX7/J5 — Freo Z Ultra (confirmed local WebSocket)
-    # Freo 20 -- confirmed by @kvkessler (#97) via auto-detect, fw v01.00.35.03.
-    "fjhpiem4ba",   # Freo 20 (confirmed local WebSocket, broadcasts)
-    # Freo 20 Edge -- confirmed by @cwisor (#109) via auto-detect, fw v01.06.10.48.
-    # Listing it here is also what lets auto-detect reach a sleeping robot: the
-    # addressed-reply path only tries known keys.
-    "ulonq49mm1",   # Freo 20 Edge (confirmed local WebSocket, broadcasts)
-    "BYWBPqSxeC",   # Previously attributed to CX7; retained for discovery coverage
-    # JX key contributed by @ciaoly (#42); local WebSocket confirmed by
-    # @Smiorld 2026-08-30 — port 9002 open, auto-detect connects, map loads.
-    "CGjuB6dzq7",   # JX — Narwal JX (confirmed local WebSocket)
-    # Confirmed cloud-only (ZeroMQ port 6789, no WebSocket)
-    "LnugwMG9ss",   # AX18 — Freo X Ultra (cloud-only, confirmed by @ManivannanBA)
-    "5OMbqk58Sc",   # AX19 — Freo X Ultra
-    # From APK analysis (unverified — model compatibility unknown)
-    "tPQJmoIbEC",   # AX6  (APK, contributed by @northwestsupra)
-    "HgArZ7KuJL",   # AX7  (APK, contributed by @northwestsupra)
-    "Uuug39n0fD",   # AX8  (APK, contributed by @northwestsupra)
-    "CNbforyZWI",   # AX15 — Freo X10 Pro (confirmed by @jlowen07)
-    "E9Q8aDzUbp",   # AX17
-    "jI5rHi4mKa",   # AX24
-    "UuTSLsMce4",   # AX25
-    "88OLXLpkjT",   # BX4  (note: APK also has 3rIGshGNAj — may vary by FW revision)
-    "3rIGshGNAj",   # BX4/Y1 alternate key (APK, contributed by @northwestsupra)
-    "7sSZZ4XfTI",   # CX2
-    "OlkUn3oUCu",   # CX3 / CX3Pure
-    "mvlduyye85",   # X30
-    "pcbfh2ldvx",   # X31
-    "EHf6cRNRGT",   # J4 / J4Pure (APK, contributed by @northwestsupra)
-    "6NjIDYxBXb",   # J4Lite (APK, contributed by @northwestsupra)
-    "cUlfJN5JYP",   # Unknown model (APK, contributed by @northwestsupra)
+    "QxMSPG6VSO",  # Flow 2 (klucz wysyłany przez aplikację)
+    "iSuVlI1If2",  # Flow 2, wariant
+    "mkbqaprvrb",  # Flow 2, wariant (firmware v01.09.08.00)
 ]
 
 # --- Status topics (robot → client, field 4 / 0x22 frames) ---

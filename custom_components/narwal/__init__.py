@@ -31,22 +31,24 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_MODEL,
     CONF_PRODUCT_KEY,
+    DEFAULT_PRODUCT_KEY,
     DOMAIN,
+    FAN_SPEEDS,
+    MANUFACTURER,
+    MODEL,
+    MOP_STRENGTH_MAP,
     PLATFORMS,
+    ROUTE_MAP,
     SERVICE_CLEAN_ROOMS,
-    configured_model_name,
-    fan_speed_map_for,
+    SERVICE_GET_CURRENT_TASK,
+    WATER_MAP,
+    WORK_MODE_MAP,
 )
 from .coordinator import NarwalCoordinator, can_prepare_clean_start
 from .narwal_client import (
-    CleaningRoute,
     CommandResult,
-    FanLevel,
-    MopHumidity,
-    MopStrengthLevel,
     NarwalConnectionError,
     RoomCleanSettings,
-    WorkMode,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,37 +77,11 @@ FIELD_PASSES = "passes"
 FIELD_MOP_PASSES = "mop_passes"
 FIELD_ROUTE = "route"
 
-WORK_MODE_OPTIONS: dict[str, WorkMode] = {
-    "vacuum": WorkMode.VACUUM,
-    "mop": WorkMode.MOP,
-    "vacuum_then_mop": WorkMode.VACUUM_THEN_MOP,
-    "vacuum_and_mop": WorkMode.VACUUM_AND_MOP,
-}
-SUCTION_OPTIONS = (
-    "ai",
-    "quiet",
-    "standard",
-    "normal",
-    "strong",
-    "super_powerful",
-    "ultra_powerful",
-    "super",
-    "ultra",
-    "max",
-)
-WATER_OPTIONS: dict[str, MopHumidity] = {
-    "dry": MopHumidity.DRY,
-    "normal": MopHumidity.NORMAL,
-    "wet": MopHumidity.WET,
-}
-MOP_STRENGTH_OPTIONS: dict[str, MopStrengthLevel] = {
-    "normal": MopStrengthLevel.NORMAL,
-    "high": MopStrengthLevel.HIGH,
-}
-ROUTE_OPTIONS: dict[str, CleaningRoute] = {
-    "standard": CleaningRoute.STANDARD,
-    "meticulous": CleaningRoute.METICULOUS,
-}
+WORK_MODE_OPTIONS = WORK_MODE_MAP
+SUCTION_OPTIONS = tuple(FAN_SPEEDS)
+WATER_OPTIONS = WATER_MAP
+MOP_STRENGTH_OPTIONS = MOP_STRENGTH_MAP
+ROUTE_OPTIONS = ROUTE_MAP
 
 CLEAN_ROOMS_SCHEMA = vol.Schema(
     {
@@ -127,8 +103,6 @@ CLEAN_ROOMS_SCHEMA = vol.Schema(
     }
 )
 
-SERVICE_GET_CURRENT_TASK = "get_current_task"
-
 GET_CURRENT_TASK_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids,
@@ -147,50 +121,6 @@ def _jsonable(value: object) -> object:
     if isinstance(value, (bytes, bytearray)):
         return bytes(value).hex()
     return value
-
-
-SUCTION_OPTION_LABELS: dict[str, str] = {
-    "quiet": "Quiet",
-    "standard": "Standard",
-    "normal": "Standard",
-    "strong": "Strong",
-    "ultra": "Ultra Powerful",
-    "ultra_powerful": "Ultra Powerful",
-    "super": "Super Powerful",
-    "super_powerful": "Super Powerful",
-    "max": "Super Powerful",
-}
-
-
-def _suction_for_coordinator(
-    coordinator: NarwalCoordinator,
-    option: str,
-) -> FanLevel:
-    """Return the model-valid suction level for a service option."""
-    if option == "ai":
-        return FanLevel.UNSPECIFIED
-    fan_map = fan_speed_map_for(coordinator.config_entry.data, include_aliases=False)
-    if option == "max":
-        return list(fan_map.values())[-1]
-    compatibility_label = {
-        "super": "Super",
-        "ultra": "Ultra",
-    }.get(option)
-    if compatibility_label is not None:
-        compatibility_level = fan_speed_map_for(
-            coordinator.config_entry.data
-        ).get(compatibility_label)
-        if compatibility_level is None:
-            raise HomeAssistantError(
-                f"{compatibility_label} suction is not supported by this Narwal model"
-            )
-        return compatibility_level
-    label = SUCTION_OPTION_LABELS[option]
-    if label not in fan_map:
-        raise HomeAssistantError(
-            f"{label} suction is not supported by this Narwal model"
-        )
-    return fan_map[label]
 
 
 def _domain_data(hass: HomeAssistant) -> dict[str, NarwalCoordinator]:
@@ -431,7 +361,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         if not room_ids:
             raise HomeAssistantError("At least one room must be selected")
 
-        fan = _suction_for_coordinator(coordinator, call.data[FIELD_SUCTION])
+        fan = FAN_SPEEDS[call.data[FIELD_SUCTION]]
         route = ROUTE_OPTIONS.get(route_label, coordinator.clean_settings.route)
         requested_settings = RoomCleanSettings(
             work_mode=work_mode,
@@ -442,12 +372,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
             route=route,
             mop_passes=call.data.get(FIELD_MOP_PASSES),
         )
-        room_settings = coordinator.room_clean_settings_for_rooms(
-            room_ids,
-            default=requested_settings,
-            use_room_profiles=False,
-        )
-
         async with coordinator.dock_action_lock:
             if not await coordinator.async_refresh_dock_status():
                 raise HomeAssistantError("Narwal status could not be refreshed")
@@ -465,7 +389,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 mop_strength=requested_settings.mop_strength,
                 passes=requested_settings.passes,
                 route=requested_settings.route,
-                room_settings=room_settings,
+                mop_passes=requested_settings.mop_passes,
             )
             if resp.result_code == 0:
                 result_name = "ACCEPTED"
@@ -490,7 +414,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
             coordinator.clean_settings.mop_strength = requested_settings.mop_strength
             coordinator.clean_settings.passes = requested_settings.passes
             coordinator.clean_settings.route = requested_settings.route
-            coordinator.record_accepted_clean_start(room_settings)
+            coordinator.record_accepted_clean_start(requested_settings)
             client.state.assume_robot_clean()
             await coordinator.async_clear_map_display_cache()
             coordinator.async_set_updated_data(client.state)
@@ -545,9 +469,9 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         )
         new_data = {**config_entry.data}
         if CONF_PRODUCT_KEY not in new_data:
-            new_data[CONF_PRODUCT_KEY] = "QoEsI5qYXO"
+            new_data[CONF_PRODUCT_KEY] = DEFAULT_PRODUCT_KEY
         if CONF_MODEL not in new_data:
-            new_data[CONF_MODEL] = "Narwal Flow"
+            new_data[CONF_MODEL] = f"Narwal {MODEL}"
         update_kwargs["data"] = new_data
         update_kwargs["version"] = 2
         _LOGGER.info("Migration complete: product_key=%s", new_data[CONF_PRODUCT_KEY])
@@ -604,9 +528,35 @@ def _async_remove_legacy_replaced_sensors(
         registry.async_remove(entity_id)
 
 
+def _async_remove_dropped_entities(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+) -> None:
+    """Usuwa z rejestru encje, których fork już nie tworzy.
+
+    Integracja autora dawała selecty i number z ustawieniami, przełączniki
+    wyboru pokoi i opcji mapy oraz kamerę obrazu diagnostycznego. Po zmianie
+    na fork zostałyby w rejestrze jako „niedostępne”.
+    """
+    registry = er.async_get(hass)
+    for entry in er.async_entries_for_config_entry(registry, config_entry.entry_id):
+        if entry.platform != DOMAIN:
+            continue
+        unique_id = str(entry.unique_id)
+        dropped = (
+            entry.domain in ("select", "number")
+            or (entry.domain == "switch" and (unique_id.endswith("_selected") or "_map_show_" in unique_id))
+            or (entry.domain == "camera" and unique_id.endswith("_carpet_map"))
+        )
+        if dropped:
+            _LOGGER.info("Usuwam encję bez odpowiednika w forku: %s", entry.entity_id)
+            registry.async_remove(entry.entity_id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: NarwalConfigEntry) -> bool:
     """Set up Narwal from a config entry."""
     _async_remove_legacy_replaced_sensors(hass, entry)
+    _async_remove_dropped_entities(hass, entry)
     coordinator = NarwalCoordinator(hass, entry)
     try:
         await coordinator.async_setup()
@@ -629,19 +579,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: NarwalConfigEntry) -> bo
     entry.runtime_data = coordinator
     _domain_data(hass)[entry.entry_id] = coordinator
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
+    # Urządzenie robota powstaje tu, przed platformami, żeby encje stacji mogły
+    # wskazać je przez `via_device_id` (parametr `via_device` znika w HA 2027.8).
     device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, entry.data["device_id"])}
+    robot_device = device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.data[CONF_DEVICE_ID])},
+        manufacturer=MANUFACTURER,
+        model=MODEL,
+        name=entry.title,
+        sw_version=coordinator.client.state.firmware_version or None,
     )
-    if device is not None:
-        device_registry.async_update_device(
-            device.id,
-            model=configured_model_name(entry.data),
-            sw_version=coordinator.client.state.firmware_version or None,
-        )
+    coordinator.robot_device_id = robot_device.id
 
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 

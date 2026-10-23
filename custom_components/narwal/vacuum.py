@@ -1,4 +1,4 @@
-"""Vacuum entity for Narwal robot vacuum."""
+"""Encja vacuum robota Narwal Flow 2."""
 
 from __future__ import annotations
 
@@ -7,28 +7,18 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.vacuum import (
+    Segment,
     StateVacuumEntity,
     VacuumActivity,
     VacuumEntityFeature,
 )
-from homeassistant.exceptions import HomeAssistantError
-
-try:
-    from homeassistant.components.vacuum import Segment
-except ImportError:
-    Segment = None  # HA < 2026.3 — room cleaning unavailable
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
 from . import NarwalConfigEntry
-from .const import (
-    UNVERSIONED_FAN_SPEED_MAP,
-    fan_speed_label_map_for,
-    fan_speed_list_for,
-    fan_speed_map_for,
-    normalize_fan_level_for_model,
-)
+from .const import FAN_SPEED_KEYS, FAN_SPEED_LIST, FAN_SPEEDS
 from .coordinator import (
     NarwalCoordinator,
     can_edit_pending_clean_settings,
@@ -55,13 +45,13 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class FanSettingRestoreData(ExtraStoredData):
-    """Persist pending suction by its stable robot value."""
+    """Zapamiętane ssanie jako stała wartość enumu robota."""
 
     value: int
     version: int = 1
 
     def as_dict(self) -> dict[str, int]:
-        """Return a JSON-serializable representation."""
+        """Postać do zapisu."""
         return {"version": self.version, "value": self.value}
 
 
@@ -74,13 +64,14 @@ WORKING_STATUS_TO_ACTIVITY: dict[WorkingStatus, VacuumActivity] = {
     WorkingStatus.CLEANING: VacuumActivity.CLEANING,
     WorkingStatus.CLEANING_ALT: VacuumActivity.CLEANING,
     WorkingStatus.CUSTOM_CLEANING: VacuumActivity.CLEANING,
-    # Mapping/exploration is active robot work.
     WorkingStatus.REMAPPING: VacuumActivity.CLEANING,
     WorkingStatus.TASK_COMPLETED: VacuumActivity.RETURNING,
     WorkingStatus.ERROR: VacuumActivity.ERROR,
 }
+
+
 def _result_name(result_code: int | CommandResult) -> str:
-    """Return a readable Narwal command result name."""
+    """Czytelna nazwa kodu odpowiedzi robota."""
     if result_code == 0:
         return "ACCEPTED"
     try:
@@ -90,7 +81,7 @@ def _result_name(result_code: int | CommandResult) -> str:
 
 
 def _raise_if_command_failed(response: Any, action: str) -> None:
-    """Raise a Home Assistant service error for rejected robot commands."""
+    """Błąd usługi HA dla odrzuconego polecenia."""
     if response.accepted:
         return
     raise HomeAssistantError(
@@ -99,7 +90,7 @@ def _raise_if_command_failed(response: Any, action: str) -> None:
 
 
 def _task_status(state: Any) -> str:
-    """Return a compact active-task status for dashboards and automations."""
+    """Zwięzły stan zadania dla dashboardów i automatyzacji."""
     is_cleaning_state = (
         state.working_status in ACTIVE_CLEANING_STATUSES
         or state.has_assumed_robot_clean
@@ -128,13 +119,8 @@ def _task_status(state: Any) -> str:
     return "unknown"
 
 
-def _is_dock_side(state: Any) -> bool:
-    """Return true when robot telemetry says it is physically dock-side."""
-    return state.is_docked
-
-
 def _has_active_cleaning_metrics(state: Any) -> bool:
-    """Return true while live clean-progress details are current."""
+    """Czy dane o postępie sprzątania są aktualne."""
     return (
         state.is_cleaning
         or state.has_assumed_robot_clean
@@ -144,7 +130,7 @@ def _has_active_cleaning_metrics(state: Any) -> bool:
 
 
 def _has_dock_stop_context(state: Any) -> bool:
-    """Return true when dock-side work must be considered before generic stop."""
+    """Czy trzeba uwzględnić pracę stacji przed ogólnym stopem."""
     return (
         state.is_station_active
         or state.has_unmapped_active_dock_task
@@ -153,7 +139,7 @@ def _has_dock_stop_context(state: Any) -> bool:
 
 
 def _can_stop_vacuum(state: Any) -> bool:
-    """Return true when the aggregate vacuum stop command is safe to expose."""
+    """Czy można bezpiecznie udostępnić polecenie stop."""
     compatible_metric_clean = (
         state.has_recent_active_working_status
         and not state.has_unmapped_active_dock_task
@@ -170,7 +156,7 @@ def _can_stop_vacuum(state: Any) -> bool:
 
 
 def _can_accept_return_home(state: Any) -> bool:
-    """Return true when return-home can act or is an idle dock no-op."""
+    """Czy powrót do stacji zadziała albo jest bezpiecznym pustym poleceniem."""
     return can_return_home(state) or (
         state.is_docked
         and not _has_dock_stop_context(state)
@@ -179,7 +165,7 @@ def _can_accept_return_home(state: Any) -> bool:
 
 
 def _has_live_robot_stop_context(state: Any) -> bool:
-    """Return true when robot telemetry identifies live stoppable work."""
+    """Czy telemetria wskazuje trwającą pracę robota do zatrzymania."""
     return (
         state.working_status in ACTIVE_CLEANING_STATUSES
         or state.working_status == WorkingStatus.REMAPPING
@@ -190,7 +176,7 @@ def _has_live_robot_stop_context(state: Any) -> bool:
 
 
 def _status_summary(state: Any) -> str:
-    """Return one concise status line for HA tile state content."""
+    """Jedna linia stanu do kafelka."""
     status = _task_status(state)
     if status in {"error", "paused", "remapping", "returning"}:
         return status.replace("_", " ").title()
@@ -212,123 +198,50 @@ async def async_setup_entry(
     entry: NarwalConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Narwal vacuum entity."""
+    """Dodaje encję vacuum."""
     coordinator = entry.runtime_data
     async_add_entities([NarwalVacuum(coordinator)])
 
 
 class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
-    """Representation of a Narwal robot vacuum."""
+    """Robot Narwal Flow 2."""
 
     _attr_translation_key = "vacuum"
+    _attr_fan_speed_list = FAN_SPEED_LIST
 
     def __init__(self, coordinator: NarwalCoordinator) -> None:
-        """Initialize the vacuum entity."""
+        """Inicjalizacja."""
         super().__init__(coordinator)
         self._attr_unique_id = coordinator.config_entry.data["device_id"]
-        # Offered tiers are per-model: models whose app tops out at DEEP omit level 5.
-        self._attr_fan_speed_list = fan_speed_list_for(coordinator.config_entry.data)
         self._last_reported_segment_signature = None
 
     async def async_added_to_hass(self) -> None:
-        """Restore the pending fan speed into clean_settings (persists across restarts)."""
+        """Przywraca zapamiętane ssanie do clean_settings."""
         await super().async_added_to_hass()
-        last = await self.async_get_last_state()
         extra = await self.async_get_last_extra_data()
-        if extra is not None:
-            data = extra.as_dict()
-            raw_value = data.get("value")
-            values = {int(value): value for value in FanLevel}
-            if (
-                data.get("version") == 1
-                and isinstance(raw_value, int)
-                and not isinstance(raw_value, bool)
-                and raw_value in values
-            ):
-                self.coordinator.clean_settings.fan = normalize_fan_level_for_model(
-                    self.coordinator.config_entry.data,
-                    values[raw_value],
-                )
-                return
-        if last is None or "fan_speed" not in last.attributes:
+        if extra is None:
             return
-        fan = last.attributes.get("fan_speed")
-        if fan is None:
-            self.coordinator.clean_settings.fan = FanLevel.UNSPECIFIED
-            return
-        if fan in UNVERSIONED_FAN_SPEED_MAP:
-            self.coordinator.clean_settings.fan = normalize_fan_level_for_model(
-                self.coordinator.config_entry.data,
-                UNVERSIONED_FAN_SPEED_MAP[fan],
-            )
-
-    @property
-    def _trusts_state(self) -> bool:
-        """Return True when the robot's reported state tracks what it is doing.
-
-        Non-broadcasting models answer polls, but the fields the capability
-        predicates read lag the robot badly. Measured on a Freo Z Ultra (CX7)
-        on fw v01.13.11.02:
-
-        * While the robot physically drove back to its dock, `base_status`
-          field 3 stayed `{1: 19, 18: 1}` across 40s of polling — it never
-          reported CLEANING or RETURNING. The Flow's sub-fields for paused
-          (3.2), returning (3.7) and dock sub-state (3.10/3.12) are absent.
-        * `is_docked` read True throughout, including while the robot was
-          away, so `async_return_to_base` treats a recall as an idle-dock
-          no-op.
-        * In that state every capability predicate returned False —
-          `can_start_cleaning`, `can_prepare_clean_start`, `can_return_home`,
-          `_can_accept_return_home`, `can_pause_cleaning`, `_can_stop_vacuum`
-          and `can_locate_robot` — so the entity advertised `STATE` alone and
-          the robot could not be driven from Home Assistant at all.
-
-        The state does eventually settle (it later read STANDBY, where several
-        of those predicates return True again), so the failure is intermittent
-        rather than permanent — which makes it worse to debug, not better: the
-        buttons come and go.
-
-        Throughout, the robot itself accepted the commands the predicates were
-        refusing. It rejects what it genuinely cannot do, with
-        NOT_APPLICABLE / CONFLICT / NOT_READY, so on these models let the robot
-        arbitrate instead of a snapshot that trails it.
-
-        This relaxes local vetoes only; the robot's capabilities are unchanged
-        and fully addressable. `map/get_map` answers normally on the same CX7
-        (map_id 1, rooms 1-3), and a `clean/start_clean` CleanTask naming a
-        single room in vacuum-only mode was accepted and read back verbatim
-        from `clean/current_clean_task/get`. Room selection and work mode work
-        here exactly as on a broadcasting model.
-        """
-        return self.coordinator.client.supports_broadcasts
+        data = extra.as_dict()
+        raw_value = data.get("value")
+        values = {int(value): value for value in FanLevel}
+        if (
+            data.get("version") == 1
+            and isinstance(raw_value, int)
+            and not isinstance(raw_value, bool)
+            and raw_value in values
+            and values[raw_value] in FAN_SPEED_KEYS
+        ):
+            self.coordinator.clean_settings.fan = values[raw_value]
 
     @property
     def supported_features(self) -> VacuumEntityFeature:
-        """Return currently usable native Home Assistant vacuum features."""
+        """Funkcje dostępne w bieżącym stanie."""
         features = VacuumEntityFeature.STATE
         state = self.coordinator.data
         if state is None or not self.available:
             return features
 
-        if not self._trusts_state:
-            # State cannot narrow this down; advertise what the robot accepts.
-            features |= (
-                VacuumEntityFeature.START
-                | VacuumEntityFeature.STOP
-                | VacuumEntityFeature.PAUSE
-                | VacuumEntityFeature.RETURN_HOME
-                | VacuumEntityFeature.LOCATE
-                | VacuumEntityFeature.FAN_SPEED
-            )
-            if (
-                Segment is not None
-                and getattr(self.coordinator, "_room_profile_store_loaded", True)
-                and self._known_room_ids(state)
-            ):
-                features |= VacuumEntityFeature.CLEAN_AREA
-            return features
-
-        if can_resume_cleaning(state) or self._can_start_selected_rooms(state):
+        if can_resume_cleaning(state) or can_prepare_clean_start(state):
             features |= VacuumEntityFeature.START
         if _can_stop_vacuum(state):
             features |= VacuumEntityFeature.STOP
@@ -340,45 +253,13 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
             features |= VacuumEntityFeature.LOCATE
         if self._fan_speed_available(state):
             features |= VacuumEntityFeature.FAN_SPEED
-        if (
-            Segment is not None
-            and can_prepare_clean_start(state)
-            and getattr(self.coordinator, "_room_profile_store_loaded", True)
-        ):
+        if can_prepare_clean_start(state):
             features |= VacuumEntityFeature.CLEAN_AREA
         return features
 
-    def _can_start_selected_rooms(self, state: Any) -> bool:
-        """Return True when native START can use the current room selection."""
-        if not can_prepare_clean_start(state):
-            return False
-        if not getattr(self.coordinator, "_room_selection_store_loaded", True):
-            return False
-        if not getattr(self.coordinator, "_room_profile_store_loaded", True):
-            return False
-        room_ids = self._known_room_ids(state)
-        if room_ids is None:
-            # async_start can still fetch the map before dispatch.
-            return True
-        if not room_ids:
-            return False
-        selected_room_ids = self.coordinator.selected_clean_room_ids_for(room_ids)
-        return bool(selected_room_ids)
-
-    @staticmethod
-    def _known_room_ids(state: Any) -> list[int] | None:
-        """Return currently cached cleanable room IDs."""
-        map_data = getattr(state, "map_data", None)
-        if map_data is None:
-            return None
-        return [room.room_id for room in map_data.rooms if room.room_id > 0]
-
     def _fan_speed_available(self, state: Any) -> bool:
-        """Return True when HA should expose the native fan speed control."""
-        setup_available = (
-            can_edit_pending_clean_settings(state)
-            and not self.coordinator.has_selected_clean_rooms()
-        )
+        """Czy pokazać sterowanie ssaniem."""
+        setup_available = can_edit_pending_clean_settings(state)
         live_available = super().available and is_live_clean_setting_available(state)
         setup_applies = clean_setting_applies_to_mode(
             "fan",
@@ -394,12 +275,12 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
 
     @property
     def extra_restore_state_data(self) -> ExtraStoredData:
-        """Return pending suction independently of its displayed active value."""
+        """Ssanie do zapamiętania między restartami."""
         return FanSettingRestoreData(value=int(self.coordinator.clean_settings.fan))
 
     @property
     def activity(self) -> VacuumActivity:
-        """Return the current vacuum activity."""
+        """Aktywność robota."""
         state = self.coordinator.data
         if state is None:
             return VacuumActivity.IDLE
@@ -411,18 +292,16 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
         )
         if state.working_status == WorkingStatus.ERROR or getattr(state, "has_error", False):
             return VacuumActivity.ERROR
-        # is_paused (field 3.2) stays stale after docking — only trust
-        # during cleaning states. Paused takes priority over returning
-        # since the robot physically stops when paused mid-return.
+        # is_paused (pole 3.2) zostaje nieaktualne po zadokowaniu, liczy się tylko
+        # podczas sprzątania. Pauza ma pierwszeństwo przed powrotem.
         if state.is_paused and is_cleaning_state:
             return VacuumActivity.PAUSED
-        # Check returning before cleaning — robot keeps working_status=CLEANING
-        # while navigating back to dock (field 3.7=1 indicates returning)
+        # Powrót przed sprzątaniem: working_status zostaje CLEANING w drodze do stacji.
         if state.is_returning:
             return VacuumActivity.RETURNING
         if state.is_cleaning or state.has_assumed_robot_clean:
             return VacuumActivity.CLEANING
-        if _is_dock_side(state):
+        if state.is_docked:
             return VacuumActivity.DOCKED
         activity = WORKING_STATUS_TO_ACTIVITY.get(state.working_status)
         if activity == VacuumActivity.DOCKED:
@@ -433,27 +312,24 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
             state.working_status == WorkingStatus.UNKNOWN
             and state.has_explicit_off_dock_signal
         ):
-            # New firmware may report an unknown status while the physical
-            # telemetry still proves the robot is away from its dock.
             return VacuumActivity.CLEANING
         return VacuumActivity.IDLE
 
     @property
     def fan_speed(self) -> str | None:
-        """Return the selected fan speed.
+        """Wybrane ssanie.
 
-        The robot does not broadcast the active fan level, so this reflects the
-        pending value held in coordinator.clean_settings (applied at the next clean
-        and, while cleaning, written live via set_fan_speed).
+        Robot nie rozgłasza aktywnego poziomu, więc to wartość z clean_settings
+        (użyta przy następnym starcie) albo ustawiona w trakcie przez set_fan_speed.
         """
         fan = self.coordinator.active_clean_setting("fan")
         if fan is None:
             fan = self.coordinator.clean_settings.fan
-        return fan_speed_label_map_for(self.coordinator.config_entry.data).get(fan)
+        return FAN_SPEED_KEYS.get(fan)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return task context for dashboard cards and automations."""
+        """Kontekst zadania dla kart i automatyzacji."""
         state = self.coordinator.data
         if state is None:
             return None
@@ -469,29 +345,24 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
             attributes["current_room"] = state.current_room_name
         return attributes
 
-    # Timeout for action commands (start/stop/return) — robot may need
-    # time to load map, plan route, etc., especially after waking.
+    # Limit czasu poleceń akcji (start/stop/powrót): robot może ładować mapę
+    # i planować trasę, zwłaszcza po wybudzeniu.
     _ACTION_TIMEOUT = 10.0
 
     async def _ensure_awake(self) -> None:
-        """Wake the robot if it is not broadcasting.
-
-        Sends a wake burst and waits for broadcasts. If the robot doesn't
-        respond, the command is still attempted — it may work even without
-        a wake confirmation (e.g., shallow sleep).
-        """
+        """Wybudza robota, jeśli nie rozgłasza stanu."""
         client = self.coordinator.client
         if not client.robot_awake:
-            _LOGGER.debug("Robot not awake — sending wake burst")
+            _LOGGER.debug("Robot nie jest wybudzony, wysyłam serię wybudzania")
             await client.wake(timeout=10.0)
 
     async def _validate_clean_start(self) -> None:
-        """Refresh dock state and clear safe dock blockers before clean start."""
+        """Odświeża stan stacji i zatrzymuje bezpieczne blokady przed startem."""
         if not await self.coordinator.async_prepare_clean_start():
             raise HomeAssistantError("Narwal clean cannot be started right now")
 
     async def async_start(self) -> None:
-        """Start or resume cleaning."""
+        """Wznawia pauzę albo sprząta cały dom z ostatnimi ustawieniami."""
         room_ids: list[int] = []
         async with self.coordinator.dock_action_lock:
             await self._ensure_awake()
@@ -502,67 +373,46 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
                 resp = await self.coordinator.client.resume(timeout=self._ACTION_TIMEOUT)
                 _raise_if_command_failed(resp, "resume")
                 return
-            if getattr(self.coordinator, "_room_profile_store_loaded", True) is False:
-                raise HomeAssistantError("Narwal room profiles are not restored yet")
 
-            # The HA vacuum start command uses integration-owned room selections:
-            # selected rooms when any are on, otherwise all rooms.
-            all_room_ids = await self._all_room_ids()
-            if not all_room_ids:
-                raise HomeAssistantError("Narwal room map is not available")
-            map_id = self.coordinator.room_settings_map_id(
-                self.coordinator.client.state.map_data
-            )
-            if map_id is None and self.coordinator.selected_clean_rooms:
-                raise HomeAssistantError("Narwal room selection is not available")
-            room_ids = self.coordinator.selected_clean_room_ids_for(
-                all_room_ids,
-                map_id=map_id,
-            )
+            room_ids = await self._all_room_ids()
             if not room_ids:
-                raise HomeAssistantError("Narwal room selection is not available")
-            settings = self.coordinator.clean_settings
-            room_settings = self.coordinator.room_clean_settings_for_rooms(
-                room_ids,
-                map_id=map_id,
-            )
-            await self._validate_clean_start()
-            if self._trusts_state and not can_start_cleaning(
-                self.coordinator.client.state
-            ):
-                raise HomeAssistantError("Narwal clean cannot be started right now")
-            resp = await self.coordinator.client.start_rooms(
-                room_ids,
-                work_mode=settings.work_mode,
-                fan=settings.fan,
-                water=settings.water,
-                mop_strength=settings.mop_strength,
-                passes=settings.passes,
-                route=settings.route,
-                room_settings=room_settings,
-            )
-            if resp.accepted:
-                self.coordinator.record_accepted_clean_start(room_settings)
-                self.coordinator.client.state.assume_robot_clean()
-                await self.coordinator.async_clear_map_display_cache()
-                self.coordinator.async_set_updated_data(self.coordinator.client.state)
+                raise HomeAssistantError("Narwal room map is not available")
+            resp = await self._start_rooms(room_ids)
         _LOGGER.info(
-            "Room-aware start: code=%s, success=%s, rooms=%s",
+            "Start całego domu: code=%s, success=%s, rooms=%s",
             resp.result_code, resp.success, room_ids,
         )
         if not resp.accepted:
-            _LOGGER.warning(
-                "Start command was rejected: %s (code=%s)",
-                _result_name(resp.result_code),
-                resp.result_code,
-            )
             raise HomeAssistantError(
                 f"Narwal start command failed: {_result_name(resp.result_code)}"
             )
         self.async_write_ha_state()
 
+    async def _start_rooms(self, room_ids: list[int]) -> Any:
+        """Wysyła start pokoi z ostatnimi ustawieniami (pod blokadą stacji)."""
+        settings = self.coordinator.clean_settings
+        await self._validate_clean_start()
+        if not can_start_cleaning(self.coordinator.client.state):
+            raise HomeAssistantError("Narwal clean cannot be started right now")
+        resp = await self.coordinator.client.start_rooms(
+            room_ids,
+            work_mode=settings.work_mode,
+            fan=settings.fan,
+            water=settings.water,
+            mop_strength=settings.mop_strength,
+            passes=settings.passes,
+            route=settings.route,
+            mop_passes=settings.mop_passes,
+        )
+        if resp.accepted:
+            self.coordinator.record_accepted_clean_start(settings)
+            self.coordinator.client.state.assume_robot_clean()
+            await self.coordinator.async_clear_map_display_cache()
+            self.coordinator.async_set_updated_data(self.coordinator.client.state)
+        return resp
+
     async def _all_room_ids(self) -> list[int]:
-        """Return every room from an authoritative map refresh."""
+        """Wszystkie pokoje aktywnej mapy po jej odświeżeniu."""
         try:
             await self.coordinator.client.get_map()
         except Exception as err:
@@ -573,88 +423,70 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
         return []
 
     async def async_stop(self, **kwargs) -> None:
-        """Stop robot-side cleaning without affecting dock-only work."""
+        """Zatrzymuje zadanie robota bez wpływu na pracę stacji."""
         async with self.coordinator.dock_action_lock:
             await self._ensure_awake()
             refreshed = await self.coordinator.async_refresh_action_status()
             if not refreshed:
                 raise HomeAssistantError("Narwal status could not be refreshed")
             state = self.coordinator.client.state
-            if self._trusts_state and not _can_stop_vacuum(state):
+            if not _can_stop_vacuum(state):
                 raise HomeAssistantError("Narwal has no active robot task to stop")
             resp = await self.coordinator.client.stop()
-        _LOGGER.info("Stop response: code=%s, success=%s", resp.result_code, resp.success)
+        _LOGGER.info("Stop: code=%s, success=%s", resp.result_code, resp.success)
         _raise_if_command_failed(resp, "stop")
 
     async def async_pause(self) -> None:
-        """Pause cleaning."""
+        """Pauza."""
         async with self.coordinator.dock_action_lock:
             await self._ensure_awake()
             if not await self.coordinator.async_refresh_action_status():
                 raise HomeAssistantError("Narwal status could not be refreshed")
             state = self.coordinator.client.state
-            if self._trusts_state and not can_pause_cleaning(state):
+            if not can_pause_cleaning(state):
                 raise HomeAssistantError("Narwal clean cannot be paused right now")
             resp = await self.coordinator.client.pause()
-        _LOGGER.info("Pause response: code=%s, success=%s", resp.result_code, resp.success)
+        _LOGGER.info("Pauza: code=%s, success=%s", resp.result_code, resp.success)
         _raise_if_command_failed(resp, "pause")
 
     async def async_return_to_base(self, **kwargs) -> None:
-        """Return to the dock."""
+        """Powrót do stacji."""
         async with self.coordinator.dock_action_lock:
             await self._ensure_awake()
             if not await self.coordinator.async_refresh_action_status():
                 raise HomeAssistantError("Narwal status could not be refreshed")
             state = self.coordinator.client.state
-            if self._trusts_state:
-                if state.is_docked and _can_accept_return_home(state):
-                    return
-                if not can_return_home(state):
-                    raise HomeAssistantError(
-                        "Narwal cannot return to the dock right now"
-                    )
+            if state.is_docked and _can_accept_return_home(state):
+                return
+            if not can_return_home(state):
+                raise HomeAssistantError("Narwal cannot return to the dock right now")
             resp = await self.coordinator.client.return_to_base(timeout=self._ACTION_TIMEOUT)
         _LOGGER.info(
-            "Return-to-base response: code=%s, success=%s",
+            "Powrót do stacji: code=%s, success=%s",
             resp.result_code, resp.success,
         )
-        if not resp.accepted:
-            _LOGGER.warning(
-                "Return-to-base did not succeed: %s (code=%s)",
-                _result_name(resp.result_code),
-                resp.result_code,
-            )
         _raise_if_command_failed(resp, "return to dock")
         self.async_write_ha_state()
 
     async def async_locate(self, **kwargs) -> None:
-        """Locate the vacuum — robot says 'Robot is here'."""
+        """Robot mówi, gdzie jest."""
         async with self.coordinator.dock_action_lock:
             await self._ensure_awake()
             if not await self.coordinator.async_refresh_action_status():
                 raise HomeAssistantError("Narwal status could not be refreshed")
             state = self.coordinator.client.state
-            if self._trusts_state and not can_locate_robot(state):
+            if not can_locate_robot(state):
                 raise HomeAssistantError("Narwal locate cannot be used right now")
             resp = await self.coordinator.client.locate()
         _raise_if_command_failed(resp, "locate")
 
     async def async_set_fan_speed(self, fan_speed: str, **kwargs) -> None:
-        """Set the fan speed.
-
-        Stores it as whole-floor pending suction when no rooms are selected;
-        while cleaning, it also writes the active task live.
-        """
-        fan_speed_map = fan_speed_map_for(self.coordinator.config_entry.data)
-        level = fan_speed_map.get(fan_speed)
+        """Ustawia ssanie na następny start, a w trakcie sprzątania także na żywo."""
+        level = FAN_SPEEDS.get(fan_speed)
         if level is None:
             raise HomeAssistantError(f"Unsupported Narwal fan speed: {fan_speed}")
         state = self.coordinator.data
-        has_selected_rooms = self.coordinator.has_selected_clean_rooms()
-        setup_available = (
-            can_edit_pending_clean_settings(state)
-            and not has_selected_rooms
-        )
+        setup_available = can_edit_pending_clean_settings(state)
         live_available = super().available and is_live_clean_setting_available(state)
         setup_applies = clean_setting_applies_to_mode(
             "fan",
@@ -682,28 +514,21 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
             resp = await self.coordinator.client.set_fan_speed(live_level)
             _raise_if_command_failed(resp, "set fan speed")
             self.coordinator.set_active_clean_setting("fan", live_level)
-        if not has_selected_rooms:
-            self.coordinator.clean_settings.fan = level
+        self.coordinator.clean_settings.fan = level
         self.async_write_ha_state()
         self.coordinator.async_update_listeners()
 
-    # --- Segment API (HA 2026.3 room-specific cleaning) ---
+    # --- Segmenty (sprzątanie pokoi przez obszary HA, vacuum.clean_area) ---
 
     async def async_get_segments(self) -> list:
-        """Return cleanable room segments from map data.
+        """Pokoje aktywnej mapy jako segmenty HA.
 
-        Maps RoomInfo from get_map to HA Segment objects.
-        Room names match the Narwal app exactly (RoomInfo.display_name).
-        Falls back to HA-cached last_seen_segments when map data is not yet
-        loaded (robot asleep at startup), so clean_area works without waking
-        the robot first.
-        Returns [] when HA < 2026.3 (Segment class unavailable).
+        Nazwy jak w aplikacji Narwal (RoomInfo.display_name). Gdy mapa nie jest
+        jeszcze wczytana (robot śpi po starcie HA), zwraca segmenty zapamiętane
+        przez HA, żeby clean_area działało bez wybudzania robota.
         """
-        if Segment is None:
-            return []
         state = self.coordinator.data
         if state is None or state.map_data is None:
-            # Robot sleeping — return cached segments so clean_area still works
             last = getattr(self, "last_seen_segments", None)
             return list(last) if last else []
         return [
@@ -719,13 +544,7 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
     async def async_clean_segments(
         self, segment_ids: list[str], **kwargs: Any
     ) -> None:
-        """Clean specific rooms by segment IDs.
-
-        Converts string segment IDs back to integer room IDs and sends
-        a room-specific clean command to the robot.
-        """
-        if getattr(self.coordinator, "_room_profile_store_loaded", True) is False:
-            raise HomeAssistantError("Narwal room profiles are not restored yet")
+        """Sprząta wskazane pokoje (segmenty HA) z ostatnimi ustawieniami."""
         await self._ensure_awake()
         try:
             room_ids = list(dict.fromkeys(int(sid) for sid in segment_ids))
@@ -756,41 +575,22 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
                     f"{', '.join(str(room_id) for room_id in unknown_ids)}"
                 )
             settings = self.coordinator.clean_settings
-            room_settings = self.coordinator.room_clean_settings_for_rooms(room_ids)
-            await self._validate_clean_start()
             _LOGGER.info(
-                "Starting room-specific clean: rooms=%s mode=%s fan=%s water=%s "
-                "mop_strength=%s passes=%s route=%s",
+                "Start pokoi: rooms=%s mode=%s fan=%s water=%s mop_strength=%s passes=%s route=%s",
                 room_ids, settings.work_mode.name, settings.fan.name,
                 settings.water.name, settings.mop_strength.name, settings.passes,
                 settings.route.name,
             )
-            resp = await self.coordinator.client.start_rooms(
-                room_ids,
-                work_mode=settings.work_mode,
-                fan=settings.fan,
-                water=settings.water,
-                mop_strength=settings.mop_strength,
-                passes=settings.passes,
-                route=settings.route,
-                room_settings=room_settings,
-            )
-            if resp.accepted:
-                self.coordinator.record_accepted_clean_start(room_settings)
-                self.coordinator.client.state.assume_robot_clean()
-                await self.coordinator.async_clear_map_display_cache()
-                self.coordinator.async_set_updated_data(self.coordinator.client.state)
+            resp = await self._start_rooms(room_ids)
         result_name = _result_name(resp.result_code)
         _LOGGER.info(
-            "Room clean response: %s (code=%s), rooms=%s",
+            "Odpowiedź na start pokoi: %s (code=%s), rooms=%s",
             result_name, resp.result_code, room_ids,
         )
         if not resp.accepted:
             _LOGGER.warning(
-                "Room clean failed: %s (code=%s), rooms=%s. "
-                "CONFLICT means robot is busy (cleaning, returning, or docked cycle in progress). "
-                "NOT_APPLICABLE means robot cannot clean right now. "
-                "Try again after the robot is idle on the dock.",
+                "Start pokoi odrzucony: %s (code=%s), rooms=%s. CONFLICT = robot zajęty, "
+                "NOT_APPLICABLE = nie może teraz sprzątać, NOT_READY = poza stacją.",
                 result_name, resp.result_code, room_ids,
             )
             raise HomeAssistantError(
@@ -800,20 +600,15 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
+        """Aktualizacja z koordynatora."""
         self._check_segment_changes()
         super()._handle_coordinator_update()
 
     def _check_segment_changes(self) -> None:
-        """Detect segment changes and raise repair issue if needed.
-
-        Compares current room data against last_seen_segments (managed by HA).
-        If rooms have changed (added, removed, or renamed), creates a repair
-        issue so the user can update their segment-to-area mappings.
-        """
+        """Zgłasza naprawę HA, gdy pokoje mapy zmieniły się względem mapowania obszarów."""
         last = getattr(self, "last_seen_segments", None)
         if last is None:
-            return  # No mapping configured yet
+            return
         state = self.coordinator.data
         if state is None or state.map_data is None:
             return
@@ -831,7 +626,7 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
             return
         self._last_reported_segment_signature = signature
         _LOGGER.info(
-            "Segment change detected: %d -> %d rooms",
+            "Zmiana pokoi mapy: %d -> %d",
             len(last_set), len(current_set),
         )
         self.async_create_segments_issue()
