@@ -2048,7 +2048,7 @@ class TestCurrentRoomTracking:
                 RoomInfo(room_id=3, name="Phoebe's room"),
             ],
         )
-        assert state.current_room_name == "Living room"
+        assert state.current_room_name == "Salon"
 
     def test_current_room_name_with_numbered_room(self) -> None:
         """current_room_name appends instance_index for duplicate room types."""
@@ -2061,7 +2061,7 @@ class TestCurrentRoomTracking:
                 RoomInfo(room_id=11, room_sub_type=6, instance_index=3),  # Toilet 3
             ],
         )
-        assert state.current_room_name == "Toilet 2"
+        assert state.current_room_name == "Toaleta 2"
 
     def test_current_room_name_unknown_room_id_returns_none(self) -> None:
         """current_room_name returns None if room_id not found in map."""
@@ -2089,12 +2089,12 @@ class TestCurrentRoomTracking:
         # First capture: field 6 = 4 (Corridor)
         state.update_from_working_status({"6": 4})
         assert state.current_room_id == 4
-        assert state.current_room_name == "Corridor"
+        assert state.current_room_name == "Korytarz"
 
         # Second capture 22 minutes later: field 6 = 1 (Living room)
         state.update_from_working_status({"6": 1})
         assert state.current_room_id == 1
-        assert state.current_room_name == "Living room"
+        assert state.current_room_name == "Salon"
 
 
 class TestRoomInfoNames:
@@ -2107,11 +2107,11 @@ class TestRoomInfoNames:
     def test_shared_table_names(self) -> None:
         """Every RoomType resolves to its verbatim en-US.json name."""
         expected = {
-            0: "Room", 1: "Master bedroom", 2: "Secondary bedroom",
-            3: "Living room", 4: "Kitchen", 5: "Bathroom", 6: "Toilet",
-            7: "Balcony", 8: "Dining room", 9: "Closet", 10: "Corridor",
-            11: "Study", 12: "Kids' room", 13: "Entertainment room",
-            14: "Storage room", 15: "Others",
+            0: "Pokój", 1: "Sypialnia główna", 2: "Sypialnia",
+            3: "Salon", 4: "Kuchnia", 5: "Łazienka", 6: "Toaleta",
+            7: "Balkon", 8: "Jadalnia", 9: "Garderoba", 10: "Korytarz",
+            11: "Gabinet", 12: "Pokój dziecięcy", 13: "Pokój rozrywki",
+            14: "Schowek", 15: "Inne",
         }
         for sub_type, name in expected.items():
             assert RoomInfo(room_sub_type=sub_type).display_name == name
@@ -2124,11 +2124,11 @@ class TestRoomInfoNames:
     def test_instance_index_appends(self) -> None:
         """Duplicate rooms get an instance-number suffix (Bathroom 2)."""
         room = RoomInfo(room_sub_type=5, instance_index=2)
-        assert room.display_name == "Bathroom 2"
+        assert room.display_name == "Łazienka 2"
 
     def test_unknown_sub_type_falls_back_to_room(self) -> None:
         """An out-of-range sub-type falls back to the default name."""
-        assert RoomInfo(room_sub_type=99).display_name == "Room"
+        assert RoomInfo(room_sub_type=99).display_name == "Pokój"
 
     def test_map_data_from_response_resolves_names(self) -> None:
         """get_map parse resolves room names via the shared table."""
@@ -2142,4 +2142,4 @@ class TestRoomInfoNames:
         }
         map_data = MapData.from_response(decoded)
         names = [r.display_name for r in map_data.rooms]
-        assert names == ["Master bedroom", "Bathroom 2"]
+        assert names == ["Sypialnia główna", "Łazienka 2"]

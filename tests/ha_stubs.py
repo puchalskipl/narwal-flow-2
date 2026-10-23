@@ -89,6 +89,9 @@ def install() -> None:
     ha_core.callback = lambda f: f  # type: ignore[attr-defined]
 
     ha_util = _mod("homeassistant.util", ha)
+    ha_util_dt = _mod("homeassistant.util.dt", ha_util)
+    import datetime as _dt
+    ha_util_dt.utcnow = lambda: _dt.datetime.now(_dt.timezone.utc)  # type: ignore[attr-defined]
     ha_util.slugify = lambda value: str(value).lower().replace(" ", "_")  # type: ignore[attr-defined]
 
     # homeassistant.exceptions
@@ -515,6 +518,25 @@ def install() -> None:
 
     ha_switch.SwitchEntity = _SwitchEntity  # type: ignore[attr-defined]
     ha_switch.SwitchEntityDescription = _SwitchEntityDescription  # type: ignore[attr-defined]
+
+    ha_image = _mod("homeassistant.components.image", ha_comp)
+
+    class _ImageEntity:
+        """Stub for ImageEntity base class."""
+
+        _attr_content_type = "image/jpeg"
+        _attr_image_last_updated = None
+
+        def __init_subclass__(cls, **kw: object) -> None:
+            pass
+
+        def __init__(self, hass: object, verify_ssl: bool = False) -> None:
+            self.hass = hass
+
+        def async_write_ha_state(self) -> None:
+            pass
+
+    ha_image.ImageEntity = _ImageEntity  # type: ignore[attr-defined]
 
     ha_cam = _mod("homeassistant.components.camera", ha_comp)
 

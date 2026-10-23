@@ -535,8 +535,8 @@ def _async_remove_dropped_entities(
     """Usuwa z rejestru encje, których fork już nie tworzy.
 
     Integracja autora dawała selecty i number z ustawieniami, przełączniki
-    wyboru pokoi i opcji mapy oraz kamerę obrazu diagnostycznego. Po zmianie
-    na fork zostałyby w rejestrze jako „niedostępne”.
+    wyboru pokoi i opcji mapy oraz kamery (mapa MJPEG i obraz diagnostyczny).
+    Po zmianie na fork zostałyby w rejestrze jako „niedostępne”.
     """
     registry = er.async_get(hass)
     for entry in er.async_entries_for_config_entry(registry, config_entry.entry_id):
@@ -546,7 +546,7 @@ def _async_remove_dropped_entities(
         dropped = (
             entry.domain in ("select", "number")
             or (entry.domain == "switch" and (unique_id.endswith("_selected") or "_map_show_" in unique_id))
-            or (entry.domain == "camera" and unique_id.endswith("_carpet_map"))
+            or entry.domain == "camera"  # mapa jest teraz encją image, obraz diagnostyczny zniknął
         )
         if dropped:
             _LOGGER.info("Usuwam encję bez odpowiednika w forku: %s", entry.entity_id)

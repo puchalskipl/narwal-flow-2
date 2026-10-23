@@ -45,6 +45,11 @@
         }
       }
     },
+    "image": {
+      "map": {
+        "name": "Map"
+      }
+    },
     "sensor": {
       "cleaning_area": {
         "name": "Cleaning area"

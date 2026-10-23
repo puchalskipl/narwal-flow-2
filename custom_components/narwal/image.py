@@ -1,4 +1,4 @@
-"""Kamera mapy Narwala — strumień MJPEG z podglądem na żywo."""
+"""Encja image z mapą Narwala, odświeżana przy każdej zmianie danych robota."""
 
 from __future__ import annotations
 
@@ -8,9 +8,10 @@ import logging
 import math
 import time
 
-from homeassistant.components.camera import Camera
+from homeassistant.components.image import ImageEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import NarwalConfigEntry
 from .coordinator import (
@@ -33,8 +34,8 @@ _NATIVE_TRAIL_MIN_GRID_DELTA = 0.25
 _NATIVE_TRAIL_MAX_POINTS = NATIVE_TRAJECTORY_MAX_POINTS
 _NATIVE_TRAIL_RECENT_TAIL_POINTS = NATIVE_TRAJECTORY_RECENT_TAIL_POINTS
 
-# Opcje rysowania mapy: etykiety pokoi zawsze, meble i ich podpisy bez (nowy
-# renderer mapy dojdzie w kolejnym etapie), bez obrotu i powiększenia.
+# Opcje rysowania mapy: etykiety pokoi tak, meble z listy mebli mapy na razie nie
+# (decyzja użytkownika 2026-10-23), bez podpisów mebli, bez obrotu i powiększenia.
 _MAP_OPTIONS_KEY: tuple[bool, bool, bool] = (True, False, False)
 _VIEW_OPTIONS_KEY: tuple[int, float] = (0, 1.0)
 
@@ -43,22 +44,21 @@ async def async_setup_entry(
     entry: NarwalConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Narwal camera entities."""
+    """Dodaje encję obrazu mapy."""
     coordinator = entry.runtime_data
-    async_add_entities([NarwalMapCamera(coordinator)])
+    async_add_entities([NarwalMapImage(coordinator)])
 
 
-class NarwalMapCamera(NarwalEntity, Camera):
-    """Camera entity that streams the vacuum's map as MJPEG."""
+class NarwalMapImage(NarwalEntity, ImageEntity):
+    """Obraz mapy (PNG) z pozycją robota, stacją i śladem przejazdu."""
 
-    _attr_name = "Map"
-    _attr_frame_interval = _MIN_RENDER_INTERVAL
-    _attr_is_streaming = True
+    _attr_translation_key = "map"
+    _attr_content_type = "image/png"
 
     def __init__(self, coordinator: NarwalCoordinator) -> None:
-        """Initialize the map camera entity."""
+        """Inicjalizacja."""
         NarwalEntity.__init__(self, coordinator)
-        Camera.__init__(self)
+        ImageEntity.__init__(self, coordinator.hass)
         device_id = coordinator.config_entry.data["device_id"]
         self._attr_unique_id = f"{device_id}_map"
         self._cached_image: bytes | None = None
@@ -74,25 +74,15 @@ class NarwalMapCamera(NarwalEntity, Camera):
 
     @property
     def extra_state_attributes(self) -> dict[str, int]:
-        """Expose a changing value so HA publishes each rendered frame."""
+        """Licznik renderów do diagnostyki."""
         return {"render_count": self._render_count}
 
-    async def async_camera_image(
-        self, width: int | None = None, height: int | None = None,
-    ) -> bytes | None:
-        """Return the latest map image as PNG (for snapshot/polling clients)."""
+    async def async_image(self) -> bytes | None:
+        """Ostatnio wyrenderowana mapa jako PNG."""
         return self._cached_image
 
-    async def handle_async_mjpeg_stream(self, request):
-        """Stream map as MJPEG using HA's built-in still-image streamer."""
-        from homeassistant.components.camera import async_get_still_stream
-
-        return await async_get_still_stream(
-            request, self.async_camera_image, "image/png", _MIN_RENDER_INTERVAL,
-        )
-
     async def async_will_remove_from_hass(self) -> None:
-        """Cancel queued map rendering before removing the camera entity."""
+        """Przerywa kolejkę renderowania przed usunięciem encji."""
         self._pending_render = None
         render_task = self._render_task
         if render_task is not None and not render_task.done():
@@ -111,7 +101,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
         converted: list[tuple[float, float]] = []
         pending_break = False
 
-        for raw_x, raw_y in NarwalMapCamera._native_trajectory_render_points(points):
+        for raw_x, raw_y in NarwalMapImage._native_trajectory_render_points(points):
             if not math.isfinite(raw_x) or not math.isfinite(raw_y):
                 pending_break = bool(converted)
                 continue
@@ -389,6 +379,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
                 self._cache_key = new_key
                 self._last_render_time = time.monotonic()
                 self._render_count += 1
+                self._attr_image_last_updated = dt_util.utcnow()
 
         except Exception:
             _LOGGER.exception("Failed to render map overlay")

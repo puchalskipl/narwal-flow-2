@@ -124,31 +124,32 @@ class RoomInfo:
     # room-name strings. One shared switch
     # (map_engine_i18n_configer.roomTypei18nKey) takes no model parameter, so
     # every model resolves these same names. See #22.
+    # Polskie nazwy typów pokoi (RoomType 0–15) dla pokoi bez własnej nazwy.
     ROOM_TYPE_NAMES: ClassVar[dict[int, str]] = {
-        0: "Room",
-        1: "Master bedroom",
-        2: "Secondary bedroom",
-        3: "Living room",
-        4: "Kitchen",
-        5: "Bathroom",
-        6: "Toilet",
-        7: "Balcony",
-        8: "Dining room",
-        9: "Closet",
-        10: "Corridor",
-        11: "Study",
-        12: "Kids' room",
-        13: "Entertainment room",
-        14: "Storage room",
-        15: "Others",
+        0: "Pokój",
+        1: "Sypialnia główna",
+        2: "Sypialnia",
+        3: "Salon",
+        4: "Kuchnia",
+        5: "Łazienka",
+        6: "Toaleta",
+        7: "Balkon",
+        8: "Jadalnia",
+        9: "Garderoba",
+        10: "Korytarz",
+        11: "Gabinet",
+        12: "Pokój dziecięcy",
+        13: "Pokój rozrywki",
+        14: "Schowek",
+        15: "Inne",
     }
 
     @property
     def display_name(self) -> str:
-        """User name, or default RoomType name with suffix for duplicates."""
+        """Nazwa z aplikacji albo polska nazwa typu pokoju z numerem przy powtórkach."""
         if self.name:
             return self.name
-        base = self.ROOM_TYPE_NAMES.get(self.room_sub_type, "Room")
+        base = self.ROOM_TYPE_NAMES.get(self.room_sub_type, "Pokój")
         if self.instance_index > 1:
             return f"{base} {self.instance_index}"
         return base

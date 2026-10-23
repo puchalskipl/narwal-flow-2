@@ -21,6 +21,7 @@ PACKAGE = ROOT / "custom_components" / "narwal"
 # Platform modules whose entities carry translation keys, mapped to their HA domain.
 PLATFORM_DOMAINS = {
     "vacuum": "vacuum",
+    "image": "image",
     "sensor": "sensor",
     "binary_sensor": "binary_sensor",
     "switch": "switch",

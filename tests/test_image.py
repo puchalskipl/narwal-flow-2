@@ -1,4 +1,4 @@
-"""Tests for Narwal map camera trail handling."""
+"""Testy encji obrazu mapy: ślad, kolejka renderowania, cache."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ import tests.ha_stubs
 
 tests.ha_stubs.install()
 
-from custom_components.narwal.camera import (  # noqa: E402
+from custom_components.narwal.image import (  # noqa: E402
     _NATIVE_TRAIL_MAX_POINTS,
-    NarwalMapCamera,
+    NarwalMapImage,
 )
 from narwal_client.const import WorkingStatus  # noqa: E402
 from narwal_client.models import MapData, MapDisplayData, NarwalState  # noqa: E402
@@ -24,9 +24,9 @@ def _float_stream(*values: float) -> bytes:
     return b"".join(struct.pack("<f", value) for value in values)
 
 
-def _camera(state: NarwalState) -> NarwalMapCamera:
-    """Create a NarwalMapCamera with mocked coordinator and render hook."""
-    camera = object.__new__(NarwalMapCamera)
+def _camera(state: NarwalState) -> NarwalMapImage:
+    """Create a NarwalMapImage with mocked coordinator and render hook."""
+    camera = object.__new__(NarwalMapImage)
     camera.coordinator = MagicMock()
     camera.coordinator.client.state = state
     camera.coordinator.config_entry = MagicMock()
@@ -34,7 +34,6 @@ def _camera(state: NarwalState) -> NarwalMapCamera:
     camera.hass = MagicMock()
     camera.hass.async_create_task = MagicMock()
     camera.async_write_ha_state = MagicMock()
-    camera.async_update_token = MagicMock()
     camera._cached_image = None
     camera._cache_key = ()
     camera._last_render_time = 0.0
@@ -44,8 +43,8 @@ def _camera(state: NarwalState) -> NarwalMapCamera:
     camera._async_render = MagicMock(return_value="render-task")
     camera._base_map_image = None
     camera._base_map_ts = 0
-    camera._base_map_options_key = (True, True, True)
     camera._room_label_points = []
+    camera._attr_image_last_updated = None
     return camera
 
 
@@ -53,7 +52,7 @@ def test_native_trajectory_grid_points_convert_and_dedupe() -> None:
     """Narwal-native trajectory points are converted using the map origin."""
     static_map = MapData(width=100, height=100, origin_x=2, origin_y=4)
 
-    points = NarwalMapCamera._native_trajectory_grid_points(
+    points = NarwalMapImage._native_trajectory_grid_points(
         [(3.0, 5.0), (3.1, 5.1), (4.0, 6.0), (200.0, 200.0)],
         static_map,
     )
@@ -65,7 +64,7 @@ def test_native_trajectory_grid_points_preserve_segment_breaks() -> None:
     """Discontinuous native windows remain separated for the renderer."""
     static_map = MapData(width=100, height=100, origin_x=2, origin_y=4)
 
-    points = NarwalMapCamera._native_trajectory_grid_points(
+    points = NarwalMapImage._native_trajectory_grid_points(
         [(3.0, 5.0), (4.0, 6.0), (float("nan"), float("nan")), (5.0, 7.0)],
         static_map,
     )
@@ -80,7 +79,7 @@ def test_native_trajectory_grid_points_break_at_out_of_bounds_sample() -> None:
     """Missing off-map samples cannot connect otherwise nearby valid points."""
     static_map = MapData(width=100, height=100)
 
-    points = NarwalMapCamera._native_trajectory_grid_points(
+    points = NarwalMapImage._native_trajectory_grid_points(
         [(10.0, 10.0), (101.0, 10.0), (11.0, 10.0)],
         static_map,
     )
@@ -100,8 +99,8 @@ def test_trajectory_cache_key_changes_for_same_length_native_update() -> None:
         {"2": {"1": _float_stream(1.0, 3.0), "2": _float_stream(1.0, 2.0)}}
     )
 
-    assert NarwalMapCamera._trajectory_cache_key(first) != (
-        NarwalMapCamera._trajectory_cache_key(corrected)
+    assert NarwalMapImage._trajectory_cache_key(first) != (
+        NarwalMapImage._trajectory_cache_key(corrected)
     )
 
 
@@ -110,7 +109,7 @@ def test_native_trajectory_grid_points_decimates_long_route_and_preserves_tail()
     static_map = MapData(width=_NATIVE_TRAIL_MAX_POINTS + 20, height=10)
     points = [(float(index), 1.0) for index in range(_NATIVE_TRAIL_MAX_POINTS + 10)]
 
-    converted = NarwalMapCamera._native_trajectory_grid_points(points, static_map)
+    converted = NarwalMapImage._native_trajectory_grid_points(points, static_map)
 
     assert len(converted) == _NATIVE_TRAIL_MAX_POINTS
     assert converted[0] == (0.0, 1.0)
@@ -145,7 +144,7 @@ def test_handle_update_passes_native_trail_to_renderer_outside_cleaning() -> Non
     camera._schedule_render = MagicMock()
 
     with patch.object(
-        NarwalMapCamera,
+        NarwalMapImage,
         "_native_trajectory_grid_points",
         side_effect=AssertionError("callback must not process full native route"),
     ):
@@ -251,9 +250,9 @@ async def test_render_pending_delays_throttled_native_update() -> None:
         camera._pending_render = (latest, latest_key)
 
     with (
-        patch("custom_components.narwal.camera.time.monotonic", return_value=101.0),
+        patch("custom_components.narwal.image.time.monotonic", return_value=101.0),
         patch(
-            "custom_components.narwal.camera.asyncio.sleep",
+            "custom_components.narwal.image.asyncio.sleep",
             new_callable=AsyncMock,
             side_effect=queue_latest,
         ) as sleep,
@@ -301,8 +300,8 @@ async def test_render_keeps_camera_access_token_stable() -> None:
         compressed_map=b"\x01",
     )
     camera = _camera(state)
-    camera._async_render = NarwalMapCamera._async_render.__get__(
-        camera, NarwalMapCamera
+    camera._async_render = NarwalMapImage._async_render.__get__(
+        camera, NarwalMapImage
     )
 
     async def executor_job(fn, *args):
@@ -314,10 +313,10 @@ async def test_render_keeps_camera_access_token_stable() -> None:
 
     camera.hass.async_add_executor_job = AsyncMock(side_effect=executor_job)
 
-    with patch.object(NarwalMapCamera, "_render_overlay_image", return_value=b"png"):
+    with patch.object(NarwalMapImage, "_render_overlay_image", return_value=b"png"):
         await camera._async_render(MapDisplayData(robot_x=4.0, robot_y=6.0), ("key",))
 
     assert camera._cached_image == b"png"
     assert camera.extra_state_attributes == {"render_count": 1}
-    camera.async_update_token.assert_not_called()
+    assert camera._attr_image_last_updated is not None
     camera.async_write_ha_state.assert_called_once()

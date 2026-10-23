@@ -1,13 +1,12 @@
-"""Tests for integration structural requirements (CLN-01, CLN-02).
+"""Testy struktury integracji.
 
-CLN-01: camera.py is the sole map entity using CameraEntity (MJPEG streaming)
-CLN-02: narwal_client embedded copy is in sync with canonical copy
+- mapa jest encją image (image.py), bez kamery,
+- kopia narwal_client w integracji jest identyczna z biblioteką.
 """
 
 from __future__ import annotations
 
 import filecmp
-import os
 from pathlib import Path
 
 import tests.ha_stubs
@@ -19,60 +18,30 @@ ROOT = Path(__file__).resolve().parent.parent
 INTEGRATION = ROOT / "custom_components" / "narwal"
 
 
-class TestCLN01PlatformRegistration:
-    """CLN-01: camera.py is the sole map entity using CameraEntity."""
+class TestMapPlatform:
+    """Mapa jest encją image, bez kamery."""
 
-    def test_platform_camera_in_platforms(self) -> None:
-        """Platform.CAMERA is registered in PLATFORMS list."""
+    def test_platform_image_in_platforms(self) -> None:
         from custom_components.narwal.const import PLATFORMS
         from homeassistant.const import Platform
 
-        assert Platform.CAMERA in PLATFORMS
+        assert Platform.IMAGE in PLATFORMS
+        assert Platform.CAMERA not in PLATFORMS
 
-    def test_platform_image_not_in_platforms(self) -> None:
-        """Platform.IMAGE is NOT in PLATFORMS (CameraEntity is used, not ImageEntity)."""
-        from custom_components.narwal.const import PLATFORMS
-        from homeassistant.const import Platform
+    def test_image_py_exists_and_camera_py_not(self) -> None:
+        assert (INTEGRATION / "image.py").is_file()
+        assert not (INTEGRATION / "camera.py").is_file()
 
-        assert Platform.IMAGE not in PLATFORMS
-
-    def test_camera_py_exists(self) -> None:
-        """camera.py exists as the map entity module."""
-        assert (INTEGRATION / "camera.py").is_file()
-
-    def test_image_py_not_present(self) -> None:
-        """image.py does not exist (CameraEntity is used instead of ImageEntity)."""
-        assert not (INTEGRATION / "image.py").is_file()
-
-    def test_camera_inherits_camera_entity(self) -> None:
-        """NarwalMapCamera inherits from Camera (CameraEntity) — verified via AST."""
+    def test_map_entity_inherits_image_entity(self) -> None:
         import ast
 
-        source = (INTEGRATION / "camera.py").read_text()
-        tree = ast.parse(source)
-
-        # Find the NarwalMapCamera class and check its bases
+        tree = ast.parse((INTEGRATION / "image.py").read_text())
         for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == "NarwalMapCamera":
-                base_names = []
-                for base in node.bases:
-                    if isinstance(base, ast.Name):
-                        base_names.append(base.id)
-                    elif isinstance(base, ast.Attribute):
-                        base_names.append(base.attr)
-                assert "Camera" in base_names or "NarwalEntity" in base_names, (
-                    f"NarwalMapCamera bases: {base_names}, expected Camera or NarwalEntity"
-                )
+            if isinstance(node, ast.ClassDef) and node.name == "NarwalMapImage":
+                bases = [getattr(b, "id", getattr(b, "attr", "")) for b in node.bases]
+                assert "ImageEntity" in bases
                 return
-        raise AssertionError("NarwalMapCamera class not found in camera.py")
-
-    def test_no_other_map_entities(self) -> None:
-        """Only camera.py provides map entities — no image.py or duplicate."""
-        map_modules = [
-            f for f in os.listdir(INTEGRATION)
-            if f.endswith(".py") and f.startswith("image")
-        ]
-        assert map_modules == [], f"Unexpected map entity modules: {map_modules}"
+        raise AssertionError("brak klasy NarwalMapImage w image.py")
 
 
 class TestCLN02NarwalClientSync:
