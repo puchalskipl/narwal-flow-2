@@ -41,6 +41,8 @@ from .const import (
     ROUTE_MAP,
     SERVICE_CLEAN_ROOMS,
     SERVICE_GET_CURRENT_TASK,
+    SERVICE_RESET_CONSUMABLE,
+    SERVICE_SEND_RAW,
     WATER_MAP,
     WORK_MODE_MAP,
 )
@@ -76,6 +78,7 @@ FIELD_MOP_STRENGTH = "mop_strength"
 FIELD_PASSES = "passes"
 FIELD_MOP_PASSES = "mop_passes"
 FIELD_ROUTE = "route"
+FIELD_FREO = "freo"
 
 WORK_MODE_OPTIONS = WORK_MODE_MAP
 SUCTION_OPTIONS = tuple(FAN_SPEEDS)
@@ -100,6 +103,7 @@ CLEAN_ROOMS_SCHEMA = vol.Schema(
         ),
         vol.Optional(FIELD_MOP_PASSES): lambda value: _validate_pass_count(value),
         vol.Optional(FIELD_ROUTE): vol.In(ROUTE_OPTIONS),
+        vol.Optional(FIELD_FREO, default=False): cv.boolean,
     }
 )
 
@@ -108,6 +112,23 @@ GET_CURRENT_TASK_SCHEMA = vol.Schema(
         vol.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids,
         vol.Optional(ATTR_DEVICE_ID): cv.ensure_list,
         vol.Optional(ATTR_AREA_ID): cv.ensure_list,
+    }
+)
+
+RESET_KINDS = {"konserwacja": 1, "wymiana": 2}
+
+RESET_CONSUMABLE_SCHEMA = GET_CURRENT_TASK_SCHEMA.extend(
+    {
+        vol.Required("rodzaj"): vol.In(RESET_KINDS),
+        vol.Required("pozycja"): vol.Coerce(int),
+    }
+)
+
+SEND_RAW_SCHEMA = GET_CURRENT_TASK_SCHEMA.extend(
+    {
+        vol.Required("topic"): str,
+        vol.Optional("payload_hex", default=""): str,
+        vol.Optional("timeout", default=15.0): vol.Coerce(float),
     }
 )
 
@@ -371,6 +392,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
             passes=passes,
             route=route,
             mop_passes=call.data.get(FIELD_MOP_PASSES),
+            freo=call.data.get(FIELD_FREO, False),
         )
         async with coordinator.dock_action_lock:
             if not await coordinator.async_refresh_dock_status():
@@ -390,6 +412,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 passes=requested_settings.passes,
                 route=requested_settings.route,
                 mop_passes=requested_settings.mop_passes,
+                freo=requested_settings.freo,
             )
             if resp.result_code == 0:
                 result_name = "ACCEPTED"
@@ -448,6 +471,62 @@ def _async_register_services(hass: HomeAssistant) -> None:
         SERVICE_GET_CURRENT_TASK,
         async_get_current_task,
         schema=GET_CURRENT_TASK_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def _async_one_coordinator(call: ServiceCall):
+        entity_ids = await _async_extract_entity_ids(call)
+        entity_ids = await _async_validate_clean_rooms_targets(hass, call, entity_ids)
+        coordinators = await _async_get_service_coordinators(hass, entity_ids)
+        if len(coordinators) != 1:
+            raise HomeAssistantError("Target exactly one Narwal vacuum")
+        coordinator = coordinators[0]
+        if not coordinator.client.robot_awake:
+            await coordinator.client.wake(timeout=10.0)
+        return coordinator
+
+    async def async_reset_consumable(call: ServiceCall) -> ServiceResponse:
+        """Kasuje przypomnienie o pozycji konserwacji albo wymiany (po wykonaniu)."""
+        coordinator = await _async_one_coordinator(call)
+        resp = await coordinator.client.reset_consumable(
+            RESET_KINDS[call.data["rodzaj"]], call.data["pozycja"]
+        )
+        coordinator.async_set_updated_data(coordinator.client.state)
+        state = coordinator.client.state
+        return {
+            "result_code": resp.result_code,
+            "raw_hex": resp.raw_payload.hex(),
+            "konserwacja": list(state.maintain_items),
+            "wymiana": list(state.replace_items),
+        }
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RESET_CONSUMABLE,
+        async_reset_consumable,
+        schema=RESET_CONSUMABLE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def async_send_raw(call: ServiceCall) -> ServiceResponse:
+        """Diagnostyka: dowolne polecenie (krótki temat + ładunek hex), zwraca odpowiedź."""
+        coordinator = await _async_one_coordinator(call)
+        resp = await coordinator.client.send_command(
+            call.data["topic"],
+            bytes.fromhex(call.data["payload_hex"]),
+            timeout=call.data["timeout"],
+        )
+        return {
+            "result_code": resp.result_code,
+            "data": _jsonable(resp.data),
+            "raw_hex": resp.raw_payload.hex(),
+        }
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SEND_RAW,
+        async_send_raw,
+        schema=SEND_RAW_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
 

@@ -2806,3 +2806,22 @@ class TestConnectionUrl:
             with pytest.raises(NarwalConnectionError):
                 await client.connect()
         assert not client.connected
+
+
+def test_base_status_docked_v2_ignored_during_working_status_dropout() -> None:
+    """Przerwa w working_status (Flow 2, do 2 min): base_status 2 bez sygnału stacji nie kończy zadania."""
+    from unittest.mock import patch
+
+    from narwal_client import NarwalClient
+    from narwal_client.const import WorkingStatus
+
+    client = NarwalClient("127.0.0.1")
+    client.state.working_status = WorkingStatus.CLEANING
+    with patch("narwal_client.models.time.monotonic", return_value=100.0):
+        client.state.last_active_working_status_time = 100.0
+    # 60 s później: świeżość minęła (15 s), sesja trwa (10 min)
+    payload = {"1": {}, "3": {"1": 2, "4": 3}, "5": 1, "7": 1, "11": 1, "12": 1}
+    with patch("narwal_client.models.time.monotonic", return_value=160.0):
+        assert not client.state.has_recent_active_working_status
+        client._update_from_base_status_broadcast(payload)
+    assert client.state.working_status == WorkingStatus.CLEANING

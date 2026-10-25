@@ -88,6 +88,8 @@ def test_consumable_alert_sensors() -> None:
     assert maint.attrs_fn(s)["items"] == ["dust box"]
     assert repl.value_fn(s) is True
     assert repl.attrs_fn(s)["items"] == ["mop", "dust bag"]
+    assert [p["nazwa"] for p in repl.attrs_fn(s)["pozycje"]] == ["Mopy", "Worek na kurz"]
+    assert maint.attrs_fn(s)["pozycje"] == [{"id": 1, "nazwa": "Pojemnik na kurz w robocie", "co_zrobic": "opróżnić i przepłukać"}]
     s.update_from_consumable_info({"1": {}})
     assert maint.value_fn(s) is False
     assert repl.value_fn(s) is False

@@ -36,6 +36,7 @@ def install() -> None:
     vol.Required = MagicMock(side_effect=lambda *a, **kw: a[0] if a else "key")  # type: ignore[attr-defined]
     vol.Optional = MagicMock(side_effect=lambda *a, **kw: a[0] if a else "key")  # type: ignore[attr-defined]
     vol.In = MagicMock()  # type: ignore[attr-defined]
+    vol.Coerce = MagicMock()  # type: ignore[attr-defined]
     vol.Invalid = type("Invalid", (Exception,), {})  # type: ignore[attr-defined]
 
     # --- homeassistant ---
@@ -139,6 +140,7 @@ def install() -> None:
     ha_cv.comp_entity_ids = MagicMock()  # type: ignore[attr-defined]
     ha_cv.entity_ids = MagicMock()  # type: ignore[attr-defined]
     ha_cv.ensure_list = MagicMock()  # type: ignore[attr-defined]
+    ha_cv.boolean = MagicMock()  # type: ignore[attr-defined]
     ha_cv.config_entry_only_config_schema = MagicMock()  # type: ignore[attr-defined]
 
     # NOTE: deliberately does NOT expose EntityCategory. Real HA removed

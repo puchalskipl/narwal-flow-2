@@ -2143,3 +2143,21 @@ class TestRoomInfoNames:
         map_data = MapData.from_response(decoded)
         names = [r.display_name for r in map_data.rooms]
         assert names == ["Sypialnia główna", "Łazienka 2"]
+
+
+def test_clean_session_window_outlives_active_ttl() -> None:
+    """Okno ponawiania subskrypcji trwa dłużej niż świeżość stanu „sprząta” (przerwy robota)."""
+    from unittest.mock import patch
+
+    from narwal_client.models import NarwalState
+
+    state = NarwalState()
+    with patch("narwal_client.models.time.monotonic", return_value=100.0):
+        state.last_active_working_status_time = 100.0
+    with patch("narwal_client.models.time.monotonic", return_value=220.0):
+        assert not state.has_recent_active_working_status
+        assert state.has_recent_clean_session
+    with patch("narwal_client.models.time.monotonic", return_value=800.0):
+        assert not state.has_recent_clean_session
+    state.last_active_working_status_time = 0.0
+    assert not state.has_recent_clean_session

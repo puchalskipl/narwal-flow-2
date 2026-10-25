@@ -43,6 +43,7 @@ from .const import (
     TOPIC_CMD_GET_ALL_MAPS,
     TOPIC_CMD_GET_BASE_STATUS,
     TOPIC_CMD_GET_CONSUMABLE_INFO,
+    TOPIC_CMD_RESET_CONSUMABLE_INFO,
     TOPIC_CMD_GET_CURRENT_TASK,
     TOPIC_CMD_GET_DEBUG_IMAGE,
     TOPIC_CMD_GET_DEVICE_INFO,
@@ -185,6 +186,9 @@ class RoomCleanSettings:
     route: CleaningRoute | None = None
     # Vacuum-then-mop only: mop pass count (tag 6). None = same as passes.
     mop_passes: int | None = None
+    # Freo: robot sam dobiera ssanie, wodę i cykle (tag 9 = 1, odczytane z zadania
+    # uruchomionego przez Matter „Freo Mind Vac”, 2026-10-25).
+    freo: bool = False
 
 
 def _base_status_working_status(decoded: dict[str, Any] | object) -> WorkingStatus | None:
@@ -425,8 +429,14 @@ class NarwalClient:
     def _update_from_base_status_broadcast(self, decoded: dict[str, Any]) -> None:
         """Apply a base-status broadcast without clobbering fresh task metrics."""
         status = _base_status_working_status(decoded)
+        # W przerwach working_status (do 2 min) zadanie trwa dalej: niejednoznaczny stan
+        # dokowania z base_status nie kończy go, chyba że robot wyraźnie zgłasza stację.
+        in_session_dropout = (
+            self.state.has_recent_clean_session
+            and _base_status_dock_evidence(decoded) is not True
+        )
         if (
-            self.state.has_recent_active_working_status
+            (self.state.has_recent_active_working_status or in_session_dropout)
             and status in _STALE_DOCK_BASE_STATUSES
         ):
             terminal_dock_status = status in {
@@ -1546,6 +1556,8 @@ class NarwalClient:
             and settings.mop_passes is not None
         ):
             param["6"] = int(settings.mop_passes)
+        if settings.freo:
+            param["9"] = 1
         return param
 
     @classmethod
@@ -1571,6 +1583,7 @@ class NarwalClient:
         passes: int = 1,
         route: CleaningRoute | None = None,
         mop_passes: int | None = None,
+        freo: bool = False,
     ) -> bytes:
         """Build a clean/start_clean request for the given rooms.
 
@@ -1589,6 +1602,7 @@ class NarwalClient:
             passes: Clean count, routed to the pass tag(s) for the mode.
             route: Optional route overlap level (tag 8).
             mop_passes: Vacuum-then-mop only: mop pass count (tag 6), defaults to passes.
+            freo: Freo (tag 9 = 1), robot sam dobiera ustawienia.
         """
         import blackboxprotobuf
 
@@ -1600,6 +1614,7 @@ class NarwalClient:
             passes=passes,
             route=route,
             mop_passes=mop_passes,
+            freo=freo,
         )
         settings_by_room = {rid: default_settings for rid in room_ids}
         task_type = self._task_type_for_settings(
@@ -1656,6 +1671,7 @@ class NarwalClient:
         route: CleaningRoute | None = None,
         mop_passes: int | None = None,
         map_id: int | None = None,
+        freo: bool = False,
     ) -> CommandResponse:
         """Start cleaning the given rooms via clean/start_clean.
 
@@ -1671,7 +1687,7 @@ class NarwalClient:
 
         Args:
             room_ids: Robot room IDs (RoomInfo.room_id), mapped from HA areas.
-            work_mode, fan, water, mop_strength, passes, route, mop_passes: CleanParam
+            work_mode, fan, water, mop_strength, passes, route, mop_passes, freo: CleanParam
                 settings, see _build_start_clean_payload.
             map_id: Map to clean on. None means the active map (get_map field 2.1).
         """
@@ -1711,6 +1727,7 @@ class NarwalClient:
                     passes=passes,
                     route=route,
                     mop_passes=mop_passes,
+                    freo=freo,
                 )
             except ValueError as err:
                 _LOGGER.warning("start_rooms: %s", err)
@@ -2108,6 +2125,40 @@ class NarwalClient:
         """Query consumable maintain/replace alert lists (not broadcast)."""
         resp = await self.send_command(TOPIC_CMD_GET_CONSUMABLE_INFO, timeout=15.0)
         self.state.update_from_consumable_info(resp.data)
+        return resp
+
+    @staticmethod
+    def _consumable_reset_payload(kind: int, item_id: int) -> bytes:
+        """Payload resetu jak ConsumableInfoPayload z odpowiedzi get_consumable_info.
+
+        {1: {kind: [item_id]}}, kind 1 = maintainItems, 2 = replaceItems, lista jako
+        spakowane varinty. Format wywnioskowany z odpowiedzi, nie z przechwycenia
+        aplikacji: wynik sprawdza się ponownym get_consumable_info.
+        """
+        def varint(value: int) -> bytes:
+            out = bytearray()
+            while True:
+                b = value & 0x7F
+                value >>= 7
+                out.append(b | (0x80 if value else 0))
+                if not value:
+                    return bytes(out)
+
+        packed = varint(item_id)
+        inner = bytes([(kind << 3) | 2]) + varint(len(packed)) + packed
+        return b"\x0a" + varint(len(inner)) + inner
+
+    async def reset_consumable(self, kind: int, item_id: int) -> CommandResponse:
+        """Kasuje przypomnienie o pozycji (konserwacja albo wymiana) i odświeża listę."""
+        resp = await self.send_command(
+            TOPIC_CMD_RESET_CONSUMABLE_INFO,
+            self._consumable_reset_payload(kind, item_id),
+            timeout=15.0,
+        )
+        try:
+            await self.get_consumable_info()
+        except NarwalCommandError as err:
+            _LOGGER.debug("reset_consumable: odświeżenie listy nieudane: %s", err)
         return resp
 
     async def get_map(self) -> MapData:

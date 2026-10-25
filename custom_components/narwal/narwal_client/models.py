@@ -25,6 +25,10 @@ _LOGGER = logging.getLogger(__name__)
 _WARNED_WORKING_STATUS: set[Any] = set()
 
 _ACTIVE_WORKING_STATUS_TTL = 15.0
+# Flow 2 robi w trakcie zadania przerwy w working_status (zmierzone 2026-10-25: 30 s i 2 min).
+# Przez tyle sekund od ostatniego aktywnego stanu (bez statusu końcowego) integracja
+# ponawia subskrypcję, gdy robot milknie, żeby wznowił wysyłanie.
+_CLEAN_SESSION_RESUB_WINDOW = 600.0
 _TERMINAL_WORKING_STATUS_TTL = 15.0
 _DOCK_DRYING_STATUS_TTL = 180.0
 _DOCK_TASK_ASSUME_TTL = 30.0
@@ -977,6 +981,16 @@ class NarwalState:
         return (
             time.monotonic() - self.last_active_working_status_time
             <= _ACTIVE_WORKING_STATUS_TTL
+        )
+
+    @property
+    def has_recent_clean_session(self) -> bool:
+        """Zadanie trwało niedawno i robot nie przysłał statusu końcowego (okno ponawiania)."""
+        if self.last_active_working_status_time <= 0:
+            return False
+        return (
+            time.monotonic() - self.last_active_working_status_time
+            <= _CLEAN_SESSION_RESUB_WINDOW
         )
 
     @property

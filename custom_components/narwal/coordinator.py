@@ -1546,7 +1546,9 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
             or state.has_assumed_robot_clean
             or state.has_paused_clean_task_context
             or (
-                state.has_recent_active_working_status
+                # has_recent_clean_session: przerwa w working_status nie kończy zadania,
+                # inaczej powrót wiadomości wyglądał na nowe zadanie i kasował ślad
+                (state.has_recent_active_working_status or state.has_recent_clean_session)
                 and not _state_attr_is_true(state, "is_returning")
             )
         )
@@ -1760,9 +1762,12 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         # display_map dropout recovery: if cleaning but no display_map for
         # 30s, re-send topic subscription. Only subscription — no wake burst
         # (wake bursts during cleaning cause pause bouncing).
+        # has_recent_clean_session: robot milknie w trakcie zadania (przerwy do 2 min),
+        # bez ponawiania integracja pokazywała wtedy „idle” aż do jego powrotu.
         is_cleaning = (
             state.is_cleaning
             or state.has_recent_active_working_status
+            or state.has_recent_clean_session
             or (
                 not state.is_docked
                 and state.working_status in ACTIVE_CLEANING_STATUSES

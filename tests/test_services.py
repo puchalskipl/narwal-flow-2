@@ -212,6 +212,26 @@ async def test_clean_rooms_service_passes_mop_passes_for_vacuum_then_mop() -> No
     assert kwargs["mop_passes"] == 3
 
 
+async def test_clean_rooms_service_passes_freo() -> None:
+    """freo z usługi trafia do start_rooms, domyślnie wyłączone."""
+    for wartosc, oczekiwane in ((True, True), (None, False)):
+        coordinator = _coordinator()
+        handler, registry = _register_clean_rooms_handler(coordinator)
+        call = _clean_rooms_call()
+        if wartosc is not None:
+            call.data["freo"] = wartosc
+        with (
+            patch(
+                "custom_components.narwal.service.async_extract_entity_ids",
+                new_callable=AsyncMock,
+                return_value=["vacuum.downstairs_narwal"],
+            ),
+            patch("custom_components.narwal.er.async_get", return_value=registry),
+        ):
+            await handler(call)
+        assert coordinator.client.start_rooms.await_args.kwargs["freo"] is oczekiwane
+
+
 async def test_clean_rooms_service_supports_legacy_entity_extractor() -> None:
     """Target extraction remains compatible with older HA helper signatures."""
     coordinator = _coordinator()

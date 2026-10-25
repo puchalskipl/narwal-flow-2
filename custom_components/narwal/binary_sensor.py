@@ -18,7 +18,9 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import NarwalConfigEntry
 from .const import (
     CONSUMABLE_MAINTAIN_ITEMS,
+    CONSUMABLE_MAINTAIN_PL,
     CONSUMABLE_REPLACE_ITEMS,
+    CONSUMABLE_REPLACE_PL,
     ERROR_HELP_URL_TEMPLATE,
 )
 from .coordinator import NarwalCoordinator
@@ -43,6 +45,11 @@ def _named(items: list[int], names: dict[int, str]) -> list[str]:
 def _unnamed(items: list[int], names: dict[int, str]) -> list[int]:
     """Consumable ids that are not in the enum, kept for diagnosis."""
     return [i for i in items if i not in names]
+
+
+def _pozycje(items: list[int], opisy: dict[int, tuple[str, str]]) -> list[dict[str, str]]:
+    """Pozycje po polsku do pokazania na dashboardzie: nazwa i co zrobić."""
+    return [{"id": i, "nazwa": opisy[i][0], "co_zrobic": opisy[i][1]} for i in items if i in opisy]
 
 
 def _tank_problem(attr: str, bad: frozenset[int]) -> Callable[[NarwalState], bool | None]:
@@ -93,6 +100,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[NarwalBinarySensorEntityDescription, ...] = (
         else None,
         attrs_fn=lambda s: {
             "items": _named(s.maintain_items, CONSUMABLE_MAINTAIN_ITEMS),
+            "pozycje": _pozycje(s.maintain_items, CONSUMABLE_MAINTAIN_PL),
             "unknown_ids": _unnamed(s.maintain_items, CONSUMABLE_MAINTAIN_ITEMS),
         } if s.raw_base_status else None,
     ),
@@ -108,6 +116,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[NarwalBinarySensorEntityDescription, ...] = (
         else None,
         attrs_fn=lambda s: {
             "items": _named(s.replace_items, CONSUMABLE_REPLACE_ITEMS),
+            "pozycje": _pozycje(s.replace_items, CONSUMABLE_REPLACE_PL),
             "unknown_ids": _unnamed(s.replace_items, CONSUMABLE_REPLACE_ITEMS),
         } if s.raw_base_status else None,
     ),

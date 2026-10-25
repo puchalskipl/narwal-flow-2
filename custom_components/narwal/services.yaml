@@ -67,6 +67,12 @@ clean_rooms:
           min: 1
           max: 3
           mode: box
+    freo:
+      name: Freo
+      description: Robot sam dobiera ssanie, wodę i cykle (ustawienia trybu są wtedy pomijane przez robota).
+      default: false
+      selector:
+        boolean: {}
     route:
       name: Route
       selector:
@@ -82,3 +88,55 @@ get_current_task:
     entity:
       integration: narwal
       domain: vacuum
+
+reset_consumable:
+  name: Resetuj przypomnienie o części
+  description: Po wymianie albo czyszczeniu kasuje przypomnienie w robocie i odświeża listę.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    rodzaj:
+      name: Rodzaj
+      required: true
+      selector:
+        select:
+          options:
+            - konserwacja
+            - wymiana
+    pozycja:
+      name: Pozycja
+      description: Numer pozycji z atrybutu `pozycje` encji konserwacji albo wymiany.
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 30
+          mode: box
+
+send_raw:
+  name: Send raw command
+  description: Diagnostyka. Wysyła polecenie (krótki temat, np. clean/start_clean) z ładunkiem protobuf w hex i zwraca odpowiedź.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    topic:
+      name: Topic
+      required: true
+      selector:
+        text: {}
+    payload_hex:
+      name: Payload (hex)
+      selector:
+        text: {}
+    timeout:
+      name: Timeout
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 60
+          mode: box

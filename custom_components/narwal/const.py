@@ -37,6 +37,8 @@ PLATFORMS: list[Platform] = [
 
 SERVICE_CLEAN_ROOMS = "clean_rooms"
 SERVICE_GET_CURRENT_TASK = "get_current_task"
+SERVICE_RESET_CONSUMABLE = "reset_consumable"
+SERVICE_SEND_RAW = "send_raw"
 
 DOCK_LIGHT_MODES: dict[str, AmbientLightCtrlType] = {
     "Off": AmbientLightCtrlType.OFF,
@@ -116,6 +118,35 @@ CONSUMABLE_REPLACE_ITEMS: dict[int, str] = {
     5: "roller brush", 6: "detergent", 7: "smart module filter", 8: "dust bag",
     20: "station bag", 21: "silver ions", 22: "curing agent", 23: "heavy detergent",
     24: "inner dust box",
+}
+
+# Polskie nazwy i co zrobić, dla atrybutu `pozycje` encji konserwacji i wymiany.
+CONSUMABLE_MAINTAIN_PL: dict[int, tuple[str, str]] = {
+    1: ("Pojemnik na kurz w robocie", "opróżnić i przepłukać"),
+    2: ("Filtr kurzu", "wytrzepać, przepłukać i wysuszyć"),
+    4: ("Żeberka tacki myjącej w stacji", "wyjąć tackę ze stacji i umyć"),
+    6: ("Kółko skrętne", "usunąć włosy i brud z przedniego kółka"),
+    7: ("Czujniki upadku", "przetrzeć suchą szmatką od spodu robota"),
+    8: ("Boczny czujnik odległości", "przetrzeć suchą szmatką z boku robota"),
+    9: ("Gąbka zbiornika wody", "wypłukać"),
+    10: ("Szczotka główna (przeciw plątaniu)", "wyjąć i usunąć włosy"),
+    11: ("Gąbka modułu dozowania", "wypłukać"),
+    20: ("Pojemnik na kurz w stacji", "opróżnić"),
+}
+CONSUMABLE_REPLACE_PL: dict[int, tuple[str, str]] = {
+    1: ("Filtr kurzu", "wymienić na nowy"),
+    2: ("Mopy", "wymienić na nowe"),
+    3: ("Szczotka boczna", "wymienić na nową"),
+    4: ("Filtr czystej wody", "wymienić na nowy"),
+    5: ("Szczotka główna", "wymienić na nową"),
+    6: ("Detergent", "uzupełnić"),
+    7: ("Filtr modułu dozowania", "wymienić na nowy"),
+    8: ("Worek na kurz", "wymienić na nowy"),
+    20: ("Worek na kurz w stacji", "wymienić na nowy"),
+    21: ("Moduł jonów srebra", "wymienić na nowy"),
+    22: ("Środek pielęgnacyjny (curing agent)", "uzupełnić"),
+    23: ("Detergent do silnych zabrudzeń", "uzupełnić"),
+    24: ("Wewnętrzny pojemnik na kurz", "wymienić na nowy"),
 }
 
 # Odnośnik do centrum pomocy Narwala dla kodu błędu (wzór z aplikacji).

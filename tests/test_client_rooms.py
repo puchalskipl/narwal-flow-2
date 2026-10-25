@@ -94,6 +94,19 @@ class TestBuildStartCleanPayload:
         assert all(it["1"]["1"] == 1 for it in items)  # zoneType = ROOM
         assert [it["3"] for it in items] == [1, 2]
 
+    def test_consumable_reset_payload(self) -> None:
+        """Reset: {1: {rodzaj: [id]}} ze spakowaną listą, jak w odpowiedzi get_consumable_info."""
+        assert NarwalClient._consumable_reset_payload(1, 8) == bytes.fromhex("0a030a0108")
+        assert NarwalClient._consumable_reset_payload(2, 20) == bytes.fromhex("0a0312011" + "4")
+
+    def test_freo_sets_tag_9(self) -> None:
+        """Freo to tag 9 = 1 w CleanParam każdego pokoju, bez Freo tagu nie ma."""
+        client = NarwalClient("127.0.0.1")
+        payload = client._build_start_clean_payload([5], 1, work_mode=WorkMode.VACUUM, freo=True)
+        assert all(item["2"]["9"] == 1 for item in _items(_task(payload)))
+        payload = client._build_start_clean_payload([5], 1, work_mode=WorkMode.VACUUM)
+        assert all("9" not in item["2"] for item in _items(_task(payload)))
+
     def test_vacuum_then_mop_separate_mop_passes(self) -> None:
         """mop_passes ustawia tylko tag 6 i tylko w trybie odkurzanie przed mopowaniem."""
         client = NarwalClient("127.0.0.1")
