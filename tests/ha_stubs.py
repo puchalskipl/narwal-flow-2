@@ -93,6 +93,7 @@ def install() -> None:
     ha_util_dt = _mod("homeassistant.util.dt", ha_util)
     import datetime as _dt
     ha_util_dt.utcnow = lambda: _dt.datetime.now(_dt.timezone.utc)  # type: ignore[attr-defined]
+    ha_util_dt.utc_from_timestamp = lambda ts: _dt.datetime.fromtimestamp(ts, _dt.timezone.utc)  # type: ignore[attr-defined]
     ha_util.slugify = lambda value: str(value).lower().replace(" ", "_")  # type: ignore[attr-defined]
 
     # homeassistant.exceptions
@@ -451,6 +452,7 @@ def install() -> None:
         BATTERY = "battery"
         DURATION = "duration"
         ENUM = "enum"
+        TIMESTAMP = "timestamp"
 
     class _SensorStateClass:
         MEASUREMENT = "measurement"

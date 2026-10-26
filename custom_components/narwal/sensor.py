@@ -13,6 +13,8 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfArea, UnitOfTime
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import NarwalConfigEntry
@@ -35,6 +37,7 @@ def _has_active_cleaning_metrics(state: NarwalState) -> bool:
     return (
         state.is_cleaning
         or state.has_recent_active_working_status
+        or state.has_recent_clean_session
         or state.has_paused_clean_task_context
     )
 
@@ -144,6 +147,7 @@ async def async_setup_entry(
         for description in SENSOR_DESCRIPTIONS
     ]
     entities.append(NarwalChargingStateSensor(coordinator))
+    entities.append(NarwalOstatnieSprzatanieSensor(coordinator))
     async_add_entities(entities)
 
 
@@ -255,3 +259,49 @@ class NarwalChargingStateSensor(NarwalEntity, SensorEntity):
         if self.native_value == "not_charging":
             return "mdi:battery-off-outline"
         return "mdi:battery-unknown"
+
+
+class NarwalOstatnieSprzatanieSensor(NarwalEntity, RestoreEntity, SensorEntity):
+    """Koniec ostatniego zadania, raport (pokoje, czas, powierzchnia, przeszkody) w atrybutach.
+
+    Robot wysyła raport tylko na koniec zadania, więc po restarcie HA wartość wraca
+    z zapisanego stanu.
+    """
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_translation_key = "ostatnie_sprzatanie"
+    _attr_icon = "mdi:clipboard-text-clock"
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        super().__init__(coordinator)
+        device_id = coordinator.config_entry.data["device_id"]
+        self._attr_unique_id = f"{device_id}_ostatnie_sprzatanie"
+        self._zapisany: dict | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        ostatni = await self.async_get_last_state()
+        if ostatni is not None and ostatni.attributes.get("koniec"):
+            self._zapisany = dict(ostatni.attributes)
+
+    def _raport(self) -> dict | None:
+        state = self.coordinator.data
+        if state is not None and state.ostatni_raport:
+            return state.ostatni_raport
+        return self._zapisany
+
+    @property
+    def native_value(self):
+        raport = self._raport()
+        if not raport or not raport.get("koniec"):
+            return None
+        return dt_util.utc_from_timestamp(raport["koniec"])
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        raport = self._raport()
+        if not raport:
+            return {}
+        return {k: v for k, v in raport.items() if k in (
+            "poczatek", "koniec", "czas_s", "powierzchnia", "pokoje", "mapa", "przeszkody",
+        )}

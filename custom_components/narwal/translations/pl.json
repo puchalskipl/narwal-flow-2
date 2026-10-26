@@ -99,6 +99,9 @@
           "fully_charged": "Naładowany",
           "not_charging": "Nie ładuje"
         }
+      },
+      "ostatnie_sprzatanie": {
+        "name": "Ostatnie sprzątanie"
       }
     },
     "binary_sensor": {

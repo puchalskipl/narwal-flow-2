@@ -73,6 +73,7 @@ from .const import (
     WorkMode,
     fan_level_for_live_command,
 )
+from .raport import raport_sprzatania
 from .models import (
     DOCK_TASK_DRY_DOCK_BAG,
     DOCK_TASK_DRY_DUST_BIN,
@@ -754,6 +755,9 @@ class NarwalClient:
         # Decode protobuf and update state based on topic
         short_topic = msg.short_topic
         _LOGGER.debug("Broadcast topic: %s (tag=0x%02x)", short_topic, msg.field_tag)
+        if short_topic.startswith(("report/", "general/")):
+            # rozpoznawanie: raporty zadania (przeszkody) zapisywane w całości także bez DEBUG
+            _LOGGER.info("Raport robota %s: %s", short_topic, msg.payload.hex())
         try:
             decoded = self._decode_protobuf(msg.payload)
         except Exception:
@@ -777,6 +781,8 @@ class NarwalClient:
             self.state.update_from_download_status(decoded)
         elif short_topic == "map/display_map":
             self._update_from_display_map_broadcast(decoded)
+        elif short_topic == "report/clean_report":
+            self.state.ostatni_raport = raport_sprzatania(decoded)
         if self.on_state_update:
             self.on_state_update(self.state)
 
@@ -837,6 +843,13 @@ class NarwalClient:
         "status/download_status",
         "map/display_map",
         "status/time_line_status",
+        # tematy, które subskrybuje aplikacja (podsłuch MQTT aplikacji 2026-10-26),
+        # raport zadania w aplikacji pokazuje przeszkody
+        "report/clean_report",
+        "report/explorer_report",
+        "report/maintain_floor_report",
+        "report/search_pet_report",
+        "general/topic",
     ]
 
     def _build_topic_subscription(self, duration: int = 600) -> bytes:
@@ -972,6 +985,9 @@ class NarwalClient:
     # Topic subscription duration (seconds) and renewal interval
     _TOPIC_SUB_DURATION = 600  # 10 minutes — matches what Narwal app sends
     _TOPIC_RESUB_INTERVAL = 480  # re-subscribe every 8 min (before 10min expiry)
+    # w trakcie zadania: odnowienie, gdy od ostatniej subskrypcji minęło tyle sekund
+    # (pętla co KEEPALIVE_INTERVAL = 15 s, więc odnowienie co 15 s, przed końcem 30 s nadawania)
+    _SESSION_RESUB_INTERVAL = 10
 
     # After this many consecutive wake bursts without response (~60s),
     # force a WebSocket reconnect to try triggering the robot's deep sleep
@@ -1048,10 +1064,17 @@ class NarwalClient:
                 # to ride inside the awake branch and on every wake burst; now
                 # that a docked robot is left alone, it has to stand on its own
                 # or the subscription lapses and the entity freezes (#73).
+                # W trakcie zadania Flow 2 nadaje tylko ok. 30 s po każdej subskrypcji
+                # (mimo duration=600 s), potem milknie do następnej. Odnawianie co pętlę
+                # trzyma ciągłość stanu i śladu (pomiar 2026-10-26: 30 s nadawania, 30 s ciszy).
                 if (
                     last_resub_time is None
                     or time.monotonic() - last_resub_time
                     > self._TOPIC_RESUB_INTERVAL
+                    or (
+                        self.state.has_recent_clean_session
+                        and self.last_subscription_age > self._SESSION_RESUB_INTERVAL
+                    )
                 ):
                     if await self._renew_topic_subscription():
                         last_resub_time = time.monotonic()

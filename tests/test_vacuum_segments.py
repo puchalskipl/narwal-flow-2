@@ -206,6 +206,40 @@ class TestVacuumActivity:
         assert vac.activity == VacuumActivity.CLEANING
         assert vac.extra_state_attributes["task_status"] == "unknown"
 
+    def test_message_gap_during_clean_keeps_cleaning(self) -> None:
+        """Przerwa w wiadomościach w trakcie zadania nie daje „idle” (test Pralni 2026-10-26).
+
+        Robot ruszył ze stacji, więc working_status zostaje DOCKED_V2 sprzed startu
+        (stan bazowy w zadaniu klient bierze tylko jako pola stacji), a po 15 s bez
+        working_status gałąź DOCKED → IDLE kończyła zadanie.
+        """
+        from narwal_client.client import NarwalClient
+
+        # pola z logu robota (status/robot_base_status i status/working_status)
+        base = {"1": {}, "2": 1120403456, "3": {"1": 2, "4": 3}, "5": 1, "6": 1, "11": 1, "12": 1,
+                "14": 1, "15": 1, "16": 1, "18": 1, "20": 1, "23": 1, "24": 1, "26": 2, "28": 2,
+                "29": 2, "30": 1, "32": {"1": 2, "4": 3}, "34": 1, "38": 100, "39": 1, "40": 1,
+                "41": 100, "44": 1, "47": 2, "49": 2}
+        w_stacji = {**base, "3": {"1": 2, "3": 6}, "11": 3, "47": 1}
+        work = {"1": 1119354880, "2": 1079259850, "3": 193, "5": {"1": 8}, "6": 8,
+                "13": 18000, "15": 600, "18": {"3": 1200}, "19": {}, "22": {}}
+        client = NarwalClient("10.0.0.1")
+        vac = _make_vacuum(state=client.state)
+        with patch("narwal_client.models.time.monotonic", return_value=1000.0):
+            client.state.update_from_base_status(w_stacji)
+            assert vac.activity == VacuumActivity.DOCKED
+            client._update_from_working_status_broadcast(work)
+        # zadanie liczy się od drugiej wiadomości ze zmienionymi danymi
+        with patch("narwal_client.models.time.monotonic", return_value=1001.5):
+            client._update_from_working_status_broadcast({**work, "3": 194})
+            client._update_from_base_status_broadcast(base)
+            assert vac.activity == VacuumActivity.CLEANING
+        with patch("narwal_client.models.time.monotonic", return_value=1020.0):
+            client._update_from_base_status_broadcast(base)
+            assert not client.state.has_recent_active_working_status
+            assert client.state.working_status == WorkingStatus.DOCKED_V2
+            assert vac.activity == VacuumActivity.CLEANING
+
     def test_task_completed_reports_returning_status(self) -> None:
         """Task-completed transition agrees with the HA returning activity."""
         state = NarwalState(working_status=WorkingStatus.TASK_COMPLETED)

@@ -303,6 +303,11 @@ class NarwalVacuum(NarwalEntity, RestoreEntity, StateVacuumEntity):
             return VacuumActivity.CLEANING
         if state.is_docked:
             return VacuumActivity.DOCKED
+        # Przerwa w wiadomościach robota w trakcie zadania (do 10 min od ostatniego
+        # stanu „sprząta”, status końcowy kasuje okno od razu) to nie koniec zadania.
+        # Bez tego zostały stan „w stacji” sprzed startu dawał tu „idle”.
+        if state.has_recent_clean_session:
+            return VacuumActivity.CLEANING
         activity = WORKING_STATUS_TO_ACTIVITY.get(state.working_status)
         if activity == VacuumActivity.DOCKED:
             return VacuumActivity.IDLE

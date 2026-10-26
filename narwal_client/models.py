@@ -973,6 +973,9 @@ class NarwalState:
     raw_base_status: dict[str, Any] = field(default_factory=dict)
     raw_working_status: dict[str, Any] = field(default_factory=dict)
 
+    # Raport ostatniego zakończonego zadania (`report/clean_report`, raport.py)
+    ostatni_raport: dict[str, Any] | None = None
+
     @property
     def has_recent_active_working_status(self) -> bool:
         """True while live working_status task metrics are still fresh."""
